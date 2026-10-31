@@ -31,7 +31,9 @@ export class FileWatcher {
       this.onChange(file);
     });
 
-    this.watcher.on("error", (error) => { logger.error(`Watcher error: ${error.message}`); });
+    this.watcher.on("error", (error) => {
+      logger.error(`Watcher error: ${error instanceof Error ? error.message : String(error)}`);
+    });
     await new Promise<void>((resolve) => {
       this.watcher!.once("ready", resolve);
     });
