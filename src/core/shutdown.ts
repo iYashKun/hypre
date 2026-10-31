@@ -9,12 +9,12 @@ export function registerShutdown(watcher: FileWatcher, restartManager: RestartMa
     if (shuttingDown) return;
 
     shuttingDown = true;
-    logger.warn("Shutting down HyperReload...");
+    logger.warn("Shutting down hypre...");
     try {
       await watcher.stop();
       await restartManager.shutdown();
 
-      logger.success("HyperReload stopped.");
+      logger.success("hypre stopped.");
       process.exit(0);
     } catch (error) {
       logger.error(
