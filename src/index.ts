@@ -111,12 +111,12 @@ async function main(): Promise<void> {
   const previewServer = isHtmlEntry
     ? new IPreviewServer(path.dirname(entry), path.basename(entry), config.previewPort)
     : null;
-  const htmlExtensions = [".html", ".css", ".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"];
+  const hextensions = [".html", ".css", ".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"];
   const watcher = new FileWatcher(
     watchDir,
     config,
     () => previewServer ? previewServer.reload() : restartManager?.schedule(),
-    previewServer ? htmlExtensions : undefined
+    previewServer ? hextensions : undefined
   );
 
   registerShutdown(watcher, async () => {
