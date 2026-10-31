@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "a universal TypeScript based hot reload engine",
   "main": "dist/index.js",
-  "bin": { "hyperreload": "dist/index.js" },
+  "bin": { "hypre": "dist/index.js" },
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
