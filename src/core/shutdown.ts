@@ -1,18 +1,16 @@
 import { logger } from "../utils/logger";
 import { FileWatcher } from "./watcher";
-import { RestartManager } from "./restart-manager";
 
-export function registerShutdown(watcher: FileWatcher, restartManager: RestartManager): void {
+export function registerShutdown(watcher: FileWatcher, cleanup: () => Promise<void>): void {
   let shuttingDown = false;
   
   const shutdown = async (): Promise<void> => {
     if (shuttingDown) return;
-
     shuttingDown = true;
     logger.warn("Shutting down hypre...");
     try {
       await watcher.stop();
-      await restartManager.shutdown();
+      await cleanup();
 
       logger.success("hypre stopped.");
       process.exit(0);
