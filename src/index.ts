@@ -20,7 +20,7 @@ async function main(): Promise<void> {
   const watchArg = args[1];
 
   if (!entryArg || entryArg.startsWith("--")) {
-    console.error("Usage: hyperreload <entry> [watch-directory]");
+    console.error("Usage: hypre <entry> [watch-directory]");
     process.exit(1);
   }
 
@@ -32,7 +32,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const configPath = path.join(cwd, "hyperreload.config.json");
+  const configPath = path.join(cwd, "hypre.config.json");
   let config: ReloadConfig = { ...defaultConfig };
 
   if (fs.existsSync(configPath)) {
@@ -89,7 +89,6 @@ async function main(): Promise<void> {
   }
 
   console.log("");
-  console.log("          HYPER RELOAD         ");
   console.log(`Entry       : ${entry}`);
   console.log(`Watch       : ${watchDir}`);
   console.log(`Debounce    : ${config.debounceMs}ms`);
