@@ -27,11 +27,12 @@ once and keep coding.
 -   **Multi-language runner support**
 -   **Recursive file watching**
 -   **Debounced change detection to reduce duplicate restarts**
+-   **Static HTML preview with automatic browser reload on port 8888**
 -   **Simple CLI designed for local or global use**
 
 ## Supported languages
 
-> **Python (.py), JavaScript (.js), TypeScript (.ts, .tsx), Ruby (.rb), Go (.go)**
+> **HTML (.html), Python (.py), JavaScript (.js), TypeScript (.ts, .tsx), Ruby (.rb), Go (.go)**
 
 Install the relevant language runtime separately. Hypre does not bundle
 Python, Node.js, Ruby or Go.
@@ -80,16 +81,21 @@ npx @yashkun/hypre app.py
 hypre app.py
 hypre app.ts
 hypre main.go
+hypre index.html
 ```
 
-**You can optionally pass a directory to watch:**
+**By default Hypre watches the current project directory recursively. You can
+optionally choose a different directory:**
 
 ``` bash
 hypre app.py ./src
 ```
 
-**Hypre watches the specified directory recursively and restarts the
-selected entry program when a supported source file changes.**
+**Hypre watches the selected directory recursively and restarts the entry
+when supported source files change. This includes local imported modules
+within that directory; dependencies under `node_modules` are ignored. For an
+HTML entry, it serves the entry directory at `http://localhost:8888` and
+reloads the browser when HTML or static assets change.**
 
 ### Example output
 
@@ -114,6 +120,7 @@ Status      : ACTIVE
 ``` json
 {
   "debounceMs": 150,
+  "previewPort": 8888,
   "ignore": [
     "**/node_modules/**",
     "**/.git/**",
