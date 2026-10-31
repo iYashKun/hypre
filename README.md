@@ -1,57 +1,162 @@
-# HyperReload
+# `hypre`
 
-Universal TypeScript-based Hot Reload and Instant Restart Engine.
+**A universal hot reload CLI**
 
-## Supported Languages
+**Write code > Save > See changes instantly**
 
-- Python (.py)
-- JavaScript (.js, .mjs, .cjs)
-- TypeScript (.ts, .tsx)
-- Ruby (.rb)
-- Go (.go)
+<p>
+  <img src="https://img.shields.io/badge/TypeScript-powered-3178C6?logo=typescript&logoColor=white" alt="TypeScript powered" />
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" />
+</p>
+
+------------------------------------------------------------------------
+
+## What is hypre?
+
+**Hypre** is a lightweight multi-language development utility that
+watches your project files and automatically restarts your running
+program whenever a supported source file changes.
+
+> Instead of stopping and rerunning your application manually, start hypre
+once and keep coding.
+
+## Features
+
+-   **Automatic restart when supported source files change**
+-   **Multi-language runner support**
+-   **Recursive file watching**
+-   **Debounced change detection to reduce duplicate restarts**
+-   **Simple CLI designed for local or global use**
+
+## Supported languages
+
+> **Python (.py), JavaScript (.js), TypeScript (.ts, .tsx), Ruby (.rb), Go (.go)**
+
+Install the relevant language runtime separately. Hypre does not bundle
+Python, Node.js, Ruby or Go.
 
 ## Installation
 
-```bash
-npm install
-npm run build
+**Install the CLI globally to use it from any project:**
+
+``` bash
+npm install -g @iyashkun/hypre
+```
+
+**Install Hypre in an individual project: (Local development dependency)**
+
+``` bash
+npm install --save-dev @iyashkun/hypre
+```
+
+**Then add a script to your project's `package.json`:**
+
+``` json
+{
+  "scripts": {
+    "dev": "hypre app.ts"
+  }
+}
+```
+
+**Run it with:**
+
+``` bash
+npm run dev
+```
+
+**Run without a global install**
+
+``` bash
+npx @iyashkun/hypre app.py
 ```
 
 ## Usage
 
-```bash
-node dist/index.js app.py
-node dist/index.js app.js
-node dist/index.js app.ts
-node dist/index.js app.rb
-node dist/index.js main.go
+**Pass the entry file as the first argument:**
+
+``` bash
+hypre app.py
+hypre app.ts
+hypre main.go
 ```
 
-## Custom Watch Directory
+**You can optionally pass a directory to watch:**
 
-```bash
-node dist/index.js app.py ./src
+``` bash
+hypre app.py ./src
 ```
 
-## Development
+**Hypre watches the specified directory recursively and restarts the
+selected entry program when a supported source file changes.**
 
-```bash
-npm run dev -- app.py
+### Example output
+
+``` text
+Entry       : /workspace/app.py
+Watch       : /workspace
+Status      : ACTIVE
+
+[INFO] Watching directory: /workspace
+[SUCCESS] Process started
+
+[CHANGE] change: /workspace/app.py
+[WARN] Restarting application...
+[INFO] Process exited
+[SUCCESS] Process started
 ```
 
 ## Configuration
 
-Edit hyperreload.config.json.
+**Create `hypre.config.json` in your project root:**
 
-- debounceMs: Restart delay in milliseconds.
-- ignore: Files and directories excluded from watching.
+``` json
+{
+  "debounceMs": 150,
+  "ignore": [
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.next/**",
+    "**/__pycache__/**",
+    "**/vendor/**",
+    "**/coverage/**"
+  ]
+}
+```
 
-## Stop
+  -----------------------------------------------------------------------
+  Option                  Type                    Description
+  ----------------------- ----------------------- -----------------------
+  `debounceMs`            `number`                Wait time after a file
+                                                  change before
+                                                  restarting
 
-Press CTRL+C.
+  `ignore`                `string[]`              Glob patterns excluded
+                                                  from file watching
+  -----------------------------------------------------------------------
 
-## Build
+If no configuration file is present, Hypre uses its built-in defaults.
 
-```bash
+## Development
+
+**Clone the repository, install dependencies and build the TypeScript
+source:**
+
+``` bash
+git clone https://github.com/iYashKun/hypre
+cd hypre
+npm install
 npm run build
 ```
+
+**Run the CLI from the compiled output:**
+
+``` bash
+node dist/index.js app.py
+```
+
+------------------------------------------------------------------------
+
+**Made with ❤️ by Yash**
