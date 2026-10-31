@@ -126,18 +126,9 @@ Status      : ACTIVE
 }
 ```
 
-  -----------------------------------------------------------------------
-  Option                  Type                    Description
-  ----------------------- ----------------------- -----------------------
-  debounceMs            number                Wait time after a file
-                                                  change before
-                                                  restarting
-
-  ignore                string[]              Glob patterns excluded
-                                                  from file watching
-  -----------------------------------------------------------------------
-
-If no configuration file is present, Hypre uses its built-in defaults.
+**debounceMs: {number} {Wait time after a file change before restarting}**
+**ignore: {string[]} Glob patterns excluded from file watching**
+-----------------------------------------------------------------------
 
 ## Development
 
