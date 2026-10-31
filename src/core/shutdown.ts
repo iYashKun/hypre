@@ -1,0 +1,30 @@
+import { logger } from "../utils/logger";
+import { FileWatcher } from "./watcher";
+import { RestartManager } from "./restart-manager";
+
+export function registerShutdown(watcher: FileWatcher, restartManager: RestartManager): void {
+  let shuttingDown = false;
+  
+  const shutdown = async (): Promise<void> => {
+    if (shuttingDown) return;
+
+    shuttingDown = true;
+    logger.warn("Shutting down HyperReload...");
+    try {
+      await watcher.stop();
+      await restartManager.shutdown();
+
+      logger.success("HyperReload stopped.");
+      process.exit(0);
+    } catch (error) {
+      logger.error(
+        error instanceof Error ? error.message : String(error)
+      );
+
+      process.exit(1);
+    }
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
