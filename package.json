@@ -4,11 +4,13 @@
   "description": "a universal TypeScript based hot reload engine",
   "main": "dist/index.js",
   "bin": { "hypre": "dist/index.js" },
+  "files": [ "dist", "README.md", "LICENSE" ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "watch": "tsc --watch"
+    "watch": "tsc --watch",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "chokidar": "^4.0.3",
