@@ -1,4 +1,3 @@
-
 {
   "name": "re",
   "version": "0.1.0",
@@ -9,16 +8,16 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "watch": "npm run build -- --watch"
+    "watch": "tsc --watch"
   },
   "dependencies": {
     "chokidar": "^4.0.3",
-    "tree-kill": "^1.2.2"
+    "tree-kill": "^1.2.2",
+    "tsx": "^4.19.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/tree-kill": "^1.0.6",
-    "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }
 }
