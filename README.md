@@ -5,6 +5,7 @@
 **Write code > Save > See changes instantly**
 
 <p>
+  <img src="https://img.shields.io/npm/v/@yashkun/hypre?color=7c3aed&label=npm" alt="npm version" />
   <img src="https://img.shields.io/badge/TypeScript-powered-3178C6?logo=typescript&logoColor=white" alt="TypeScript powered" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" />
 </p>
