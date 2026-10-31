@@ -11,7 +11,7 @@ import { ProcessManager } from "./core/process-manager";
 import { RestartManager } from "./core/restart-manager";
 import { FileWatcher } from "./core/watcher";
 import { registerShutdown } from "./core/shutdown";
-import { HtmlPreviewServer } from "./core/preview-server";
+import { IPreviewServer } from "./core/preview-server";
 
 import { logger } from "./utils/logger";
 
@@ -109,7 +109,7 @@ async function main(): Promise<void> {
     ? new RestartManager(processManager, runner, config.debounceMs)
     : null;
   const previewServer = isHtmlEntry
-    ? new HtmlPreviewServer(path.dirname(entry), path.basename(entry), config.previewPort)
+    ? new IPreviewServer(path.dirname(entry), path.basename(entry), config.previewPort)
     : null;
   const htmlExtensions = [".html", ".css", ".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"];
   const watcher = new FileWatcher(
