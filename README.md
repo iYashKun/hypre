@@ -144,12 +144,13 @@ git clone https://github.com/iYashKun/hypre.git
 cd hypre
 npm install
 npm run build
+npm link
 ```
 
 **Run the CLI from the compiled output:**
 
 ``` bash
-node dist/index.js app.py
+hypre app.py
 ```
 
 ------------------------------------------------------------------------
