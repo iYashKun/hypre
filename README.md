@@ -129,11 +129,11 @@ Status      : ACTIVE
   -----------------------------------------------------------------------
   Option                  Type                    Description
   ----------------------- ----------------------- -----------------------
-  `debounceMs`            `number`                Wait time after a file
+  debounceMs            number                Wait time after a file
                                                   change before
                                                   restarting
 
-  `ignore`                `string[]`              Glob patterns excluded
+  ignore                string[]              Glob patterns excluded
                                                   from file watching
   -----------------------------------------------------------------------
 
