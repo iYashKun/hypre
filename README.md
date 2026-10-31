@@ -126,10 +126,6 @@ Status      : ACTIVE
 }
 ```
 
-**debounceMs: {number} {Wait time after a file change before restarting}**
-**ignore: {string[]} Glob patterns excluded from file watching**
------------------------------------------------------------------------
-
 ## Development
 
 **Clone the repository, install dependencies and build the TypeScript
