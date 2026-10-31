@@ -8,6 +8,7 @@ export interface RunnerDefinition {
 export interface ReloadConfig {
   debounceMs: number;
   ignore: string[];
+  previewPort: number;
 }
 
 export interface EngineState {
