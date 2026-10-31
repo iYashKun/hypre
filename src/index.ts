@@ -11,6 +11,7 @@ import { ProcessManager } from "./core/process-manager";
 import { RestartManager } from "./core/restart-manager";
 import { FileWatcher } from "./core/watcher";
 import { registerShutdown } from "./core/shutdown";
+import { HtmlPreviewServer } from "./core/preview-server";
 
 import { logger } from "./utils/logger";
 
@@ -54,7 +55,14 @@ async function main(): Promise<void> {
             (item): item is string => typeof item === "string"
           )
             ? userConfig.ignore
-            : defaultConfig.ignore
+            : defaultConfig.ignore,
+        previewPort:
+          typeof userConfig.previewPort === "number" &&
+          Number.isInteger(userConfig.previewPort) &&
+          userConfig.previewPort > 0 &&
+          userConfig.previewPort <= 65535
+            ? userConfig.previewPort
+            : defaultConfig.previewPort
       };
     } catch (error) {
       logger.error(
@@ -66,26 +74,26 @@ async function main(): Promise<void> {
     }
   }
 
-  const watchDir = path.resolve(
-    cwd,
-    watchArg || path.dirname(entry)
-  );
+  const watchDir = path.resolve(cwd, watchArg || ".");
 
   if (!fs.existsSync(watchDir) || !fs.statSync(watchDir).isDirectory()) {
     logger.error(`Watch directory not found: ${watchDir}`);
     process.exit(1);
   }
 
-  let runner;
+  const isHtmlEntry = path.extname(entry).toLowerCase() === ".html";
+  let runner: ReturnType<typeof getRunner> | null = null;
 
-  try {
-    runner = getRunner(entry);
-  } catch (error) {
-    logger.error(
-      error instanceof Error ? error.message : String(error)
-    );
-    process.exit(1);
-    return;
+  if (!isHtmlEntry) {
+    try {
+      runner = getRunner(entry);
+    } catch (error) {
+      logger.error(
+        error instanceof Error ? error.message : String(error)
+      );
+      process.exit(1);
+      return;
+    }
   }
 
   console.log("");
@@ -93,16 +101,32 @@ async function main(): Promise<void> {
   console.log(`Watch       : ${watchDir}`);
   console.log(`Debounce    : ${config.debounceMs}ms`);
   console.log(`Extensions  : ${path.extname(entry)}`);
+  if (isHtmlEntry) console.log(`Preview     : http://localhost:${config.previewPort}`);
   console.log("");
 
-  const processManager = new ProcessManager(watchDir);
-  const restartManager = new RestartManager(processManager, runner, config.debounceMs);
-  const watcher = new FileWatcher(watchDir, config, () => restartManager.schedule());
+  const processManager = runner ? new ProcessManager(watchDir) : null;
+  const restartManager = processManager && runner
+    ? new RestartManager(processManager, runner, config.debounceMs)
+    : null;
+  const previewServer = isHtmlEntry
+    ? new HtmlPreviewServer(path.dirname(entry), path.basename(entry), config.previewPort)
+    : null;
+  const htmlExtensions = [".html", ".css", ".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"];
+  const watcher = new FileWatcher(
+    watchDir,
+    config,
+    () => previewServer ? previewServer.reload() : restartManager?.schedule(),
+    previewServer ? htmlExtensions : undefined
+  );
 
-  registerShutdown(watcher, restartManager);
+  registerShutdown(watcher, async () => {
+    await restartManager?.shutdown();
+    await previewServer?.stop();
+  });
 
+  await previewServer?.start();
   await watcher.start();
-  await restartManager.start();
+  await restartManager?.start();
 }
 
 main().catch((error: unknown) => {
