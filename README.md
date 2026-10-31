@@ -40,13 +40,13 @@ Python, Node.js, Ruby or Go.
 **Install the CLI globally to use it from any project:**
 
 ``` bash
-npm install -g @iyashkun/hypre
+npm install -g @yashkun/hypre
 ```
 
 **Install Hypre in an individual project: (Local development dependency)**
 
 ``` bash
-npm install --save-dev @iyashkun/hypre
+npm install --save-dev @yashkun/hypre
 ```
 
 **Then add a script to your project's `package.json`:**
@@ -68,7 +68,7 @@ npm run dev
 **Run without a global install**
 
 ``` bash
-npx @iyashkun/hypre app.py
+npx @yashkun/hypre app.py
 ```
 
 ## Usage
@@ -132,7 +132,7 @@ Status      : ACTIVE
 source:**
 
 ``` bash
-git clone https://github.com/iYashKun/hypre
+git clone https://github.com/iYashKun/hypre.git
 cd hypre
 npm install
 npm run build
