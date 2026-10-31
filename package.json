@@ -1,7 +1,7 @@
 {
-  "name": "re",
+  "name": "@iyashkun/hypre",
   "version": "0.1.0",
-  "description": "Universal TypeScript based hot reload engine",
+  "description": "a universal TypeScript based hot reload engine",
   "main": "dist/index.js",
   "bin": { "hyperreload": "dist/index.js" },
   "scripts": {
@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/tree-kill": "^1.0.6",
     "typescript": "^5.7.0"
-  }
+  },
+  "publishConfig": { "access": "public" }
 }
