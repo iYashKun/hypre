@@ -1,0 +1,19 @@
+const colors = { reset: "\x1b[0m", red: "\x1b[31m", green: "\x1b[32m", yellow: "\x1b[33m", cyan: "\x1b[36m", gray: "\x1b[90m" };
+
+function log(level: string, color: string, message: string): void {
+  const time = new Date().toLocaleTimeString();
+  console.log(`${colors.gray}[${time}]${colors.reset} ${color}[${level}]${colors.reset} ${message}`);
+}
+
+export const logger = {
+  info: (message: string) =>
+    log("INFO", colors.cyan, message),
+  success: (message: string) =>
+    log("SUCCESS", colors.green, message),
+  warn: (message: string) =>
+    log("WARN", colors.yellow, message),
+  error: (message: string) =>
+    log("ERROR", colors.red, message),
+  change: (message: string) =>
+    log("CHANGE", colors.yellow, message)
+};
