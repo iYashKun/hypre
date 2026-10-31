@@ -11,12 +11,11 @@ export class FileWatcher {
   constructor(
     private readonly directory: string,
     private readonly config: ReloadConfig,
-    private readonly onChange: (file: string) => void
+    private readonly onChange: (file: string) => void,
+    private readonly extensions: string[] = getSupportedExtensions()
   ) {}
 
   async start(): Promise<void> {
-    const supported = getSupportedExtensions();
-
     this.watcher = chokidar.watch(this.directory, {
       ignored: this.config.ignore,
       ignoreInitial: true,
@@ -26,7 +25,7 @@ export class FileWatcher {
     this.watcher.on("all", (event, file) => {
       const extension = getExtension(file);
 
-      if (!supported.includes(extension)) return;
+      if (!this.extensions.includes(extension)) return;
       logger.change(`${event}: ${file}`);
       this.onChange(file);
     });
