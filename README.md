@@ -155,7 +155,6 @@ Status      : ACTIVE
   "proxy": {
     "enabled": false,
     "port": 3000,
-    "healthPath": "/",
     "readinessTimeoutMs": 10000
   },
   "ignore": [
@@ -172,12 +171,12 @@ Status      : ACTIVE
 }
 ```
 
-Hypre keeps the current process until its replacement passes startup checks.
+**Hypre keeps the current process until its replacement passes startup checks.
 `restartLoopLimit` and `restartLoopWindowMs` control when repeated failures
 pause automatic recovery. Use `hypre -h` or `hypre --help` for the command
-list.
-Proxy mode expects an HTTP application that honors `PORT`; its health check
-accepts HTTP 2xx/3xx responses.
+list.**
+> Proxy mode expects an HTTP application that honors `PORT`; it checks `/` for
+an HTTP 2xx/3xx response before switching traffic.
 
 ## Development
 
