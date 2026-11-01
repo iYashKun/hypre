@@ -1,4 +1,4 @@
-import chokidar, { type FSWatcher } from "chokidar";
+import type { FSWatcher } from "chokidar" with { "resolution-mode": "import" };
 
 import type { ReloadConfig } from "../types";
 import { getSupportedExtensions } from "../runners";
@@ -16,6 +16,7 @@ export class FileWatcher {
   ) {}
 
   async start(): Promise<void> {
+    const { default: chokidar } = await import("chokidar");
     this.watcher = chokidar.watch(this.directory, {
       ignored: this.config.ignore,
       ignoreInitial: true,
