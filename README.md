@@ -37,7 +37,7 @@ once and keep coding.
 > **HTML (.html), Python (.py), JavaScript (.js), TypeScript (.ts, .tsx), Ruby (.rb), Go (.go), Rust (.rs), PHP (.php)**
 
 Install the relevant language runtime separately. Hypre does not bundle
-Python, Node.js, Ruby, Go, Rust (Cargo) or PHP.
+Python, Node.js, Ruby, Go, Rust or PHP.
 
 ## Installation
 
@@ -85,7 +85,6 @@ hypre app.ts
 hypre main.go
 hypre src/main.rs
 hypre index.php
-hypre index.html
 ```
 
 **By default Hypre watches the current project directory recursively. You can
