@@ -8,7 +8,6 @@ export class LiveProxyServer {
 
   constructor(
     private readonly port: number,
-    private readonly healthPath: string,
     private readonly readinessTimeoutMs: number
   ) {}
 
@@ -55,14 +54,13 @@ export class LiveProxyServer {
 
   async waitUntilReady(port: number): Promise<void> {
     const deadline = Date.now() + this.readinessTimeoutMs;
-    const healthPath = this.healthPath.startsWith("/") ? this.healthPath : `/${this.healthPath}`;
 
     while (Date.now() < deadline) {
-      if (await this.probe(port, healthPath)) return;
+      if (await this.probe(port)) return;
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
     }
 
-    throw new Error(`Readiness check timed out after ${this.readinessTimeoutMs}ms at http://127.0.0.1:${port}${healthPath}`);
+    throw new Error(`Readiness check timed out after ${this.readinessTimeoutMs}ms at http://127.0.0.1:${port}/`);
   }
 
   promote(port: number): void {
@@ -124,9 +122,9 @@ export class LiveProxyServer {
     socket.on("error", () => upstream.destroy());
   }
 
-  private probe(port: number, healthPath: string): Promise<boolean> {
+  private probe(port: number): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      const request = http.get({ hostname: "127.0.0.1", port, path: healthPath }, (response) => {
+      const request = http.get({ hostname: "127.0.0.1", port, path: "/" }, (response) => {
         response.resume();
         resolve((response.statusCode ?? 500) < 400);
       });
