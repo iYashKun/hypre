@@ -5,10 +5,11 @@
 **Write code > Save > See changes instantly**
 
 <p>
-  <img src="https://img.shields.io/npm/v/@yashkun/hypre?color=7c3aed&label=npm" alt="npm version" />
-  <img src="https://img.shields.io/badge/TypeScript-powered-3178C6?logo=typescript&logoColor=white" alt="TypeScript powered" />
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" />
-  <img src="https://img.shields.io/github/created-at/iYashKun/hypre?label=created%20at&labelColor=black&color=7C3AED" alt="created at" />
+  <img src="https://img.shields.io/npm/v/@yashkun/hypre?color=7c3aed&label=npm" />
+  <img src="https://img.shields.io/badge/TypeScript-powered-3178C6?logo=typescript&logoColor=white" />
+  <img src="https://img.shields.io/badge/license-MIT-green" />
+  <img src="https://img.shields.io/github/created-at/iYashKun/hypre?label=created%20at&labelColor=black&color=7C3AED" />
+  <img src="https://img.shields.io/github/last-commit/iYashKun/hypre?style=flat&logo=git&color=F05032&logoColor=white" />
 </p>
 
 ------------------------------------------------------------------------
