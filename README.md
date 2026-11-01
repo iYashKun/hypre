@@ -26,6 +26,8 @@ once and keep coding.
 ## Features
 
 -   **Automatic restart when supported source files change**
+-   **Staged restarts that keep the previous process running when a replacement fails**
+-   **TypeScript type checking, crash recovery, grouped errors and restart loop protection**
 -   **Multi-language runner support**
 -   **Recursive file watching**
 -   **Debounced change detection to reduce duplicate restarts**
@@ -87,6 +89,20 @@ hypre src/main.rs
 hypre index.php
 ```
 
+**Run an npm script, restart the active Hypre session, generate configuration or print the version:**
+
+``` bash
+hypre run dev
+hypre restart
+hypre init
+hypre --v
+```
+
+`hypre run dev` runs `npm run dev` and watches source files plus
+`package.json`. `hypre restart` requests a restart from the Hypre session
+running in the current project. `hypre init` creates `hypre.config.json` and
+never overwrites an existing file.
+
 **By default Hypre watches the current project directory recursively. You can
 optionally choose a different directory:**
 
@@ -99,6 +115,13 @@ when supported source files change. This includes local imported modules
 within that directory; dependencies under `node_modules` are ignored. For an
 HTML entry, it serves the entry directory at `http://localhost:8888` and
 reloads the browser when HTML or static assets change.**
+
+For HTTP servers, enable `proxy` in `hypre.config.json` and have the app bind
+to the `PORT` environment variable. Hypre starts each replacement on a
+separate local port, waits for the configured health path to return a
+successful response, switches proxy traffic and then gracefully stops the
+old process. The proxy listens on `proxy.port`. Without proxy mode, a server
+that binds a fixed port may need a brief handoff during restart.
 
 ### Example output
 
@@ -124,6 +147,17 @@ Status      : ACTIVE
 {
   "debounceMs": 150,
   "previewPort": 8888,
+  "startupGraceMs": 1000,
+  "shutdownTimeoutMs": 5000,
+  "restartOnCrash": true,
+  "restartLoopLimit": 5,
+  "restartLoopWindowMs": 30000,
+  "proxy": {
+    "enabled": false,
+    "port": 3000,
+    "healthPath": "/",
+    "readinessTimeoutMs": 10000
+  },
   "ignore": [
     "**/node_modules/**",
     "**/.git/**",
@@ -137,6 +171,13 @@ Status      : ACTIVE
   ]
 }
 ```
+
+Hypre keeps the current process until its replacement passes startup checks.
+`restartLoopLimit` and `restartLoopWindowMs` control when repeated failures
+pause automatic recovery. Use `hypre -h` or `hypre --help` for the command
+list.
+Proxy mode expects an HTTP application that honors `PORT`; its health check
+accepts HTTP 2xx/3xx responses.
 
 ## Development
 

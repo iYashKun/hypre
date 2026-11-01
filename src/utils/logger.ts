@@ -10,6 +10,12 @@ export const logger = {
     log("INFO", colors.cyan, message),
   success: (message: string) =>
     log("SUCCESS", colors.green, message),
+  build: (message: string) =>
+    log("BUILD", colors.cyan, message),
+  status: (message: string) =>
+    log("STATUS", colors.gray, message),
+  watch: (message: string) =>
+    log("WATCH", colors.cyan, message),
   warn: (message: string) =>
     log("WARN", colors.yellow, message),
   error: (message: string) =>

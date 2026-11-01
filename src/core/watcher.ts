@@ -37,7 +37,7 @@ export class FileWatcher {
       this.watcher!.once("ready", resolve);
     });
 
-    logger.success(`Watching directory: ${this.directory}`);
+    logger.watch(this.directory);
   }
 
   async stop(): Promise<void> {
