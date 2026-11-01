@@ -53,8 +53,6 @@ function loadConfig(cwd: string): ReloadConfig {
       enabled: typeof proxy.enabled === "boolean" ? proxy.enabled : defaultConfig.proxy.enabled,
       port: typeof proxy.port === "number" && Number.isInteger(proxy.port) && proxy.port > 0 && proxy.port <= 65535
         ? proxy.port : defaultConfig.proxy.port,
-      healthPath: typeof proxy.healthPath === "string" && proxy.healthPath.startsWith("/")
-        ? proxy.healthPath : defaultConfig.proxy.healthPath,
       readinessTimeoutMs: typeof proxy.readinessTimeoutMs === "number" && Number.isFinite(proxy.readinessTimeoutMs) && proxy.readinessTimeoutMs > 0
         ? proxy.readinessTimeoutMs : defaultConfig.proxy.readinessTimeoutMs
     }
@@ -157,7 +155,7 @@ async function main(): Promise<void> {
   const processCwd = runScript ? cwd : watchDir;
   const processManager = runner ? new ProcessManager(processCwd) : null;
   const proxyServer = runner && config.proxy.enabled
-    ? new LiveProxyServer(config.proxy.port, config.proxy.healthPath, config.proxy.readinessTimeoutMs)
+    ? new LiveProxyServer(config.proxy.port, config.proxy.readinessTimeoutMs)
     : null;
   const restartManager = processManager && runner
     ? new RestartManager(processManager, runner, config, proxyServer)
