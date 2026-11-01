@@ -22,7 +22,6 @@ export interface ReloadConfig {
   proxy: {
     enabled: boolean;
     port: number;
-    healthPath: string;
     readinessTimeoutMs: number;
   };
 }
