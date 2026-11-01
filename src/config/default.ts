@@ -11,7 +11,6 @@ export const defaultConfig: ReloadConfig = {
   proxy: {
     enabled: false,
     port: 3000,
-    healthPath: "/",
     readinessTimeoutMs: 10000
   },
   ignore: [
