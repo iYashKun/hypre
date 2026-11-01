@@ -1,6 +1,6 @@
 {
   "name": "@yashkun/hypre",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "a universal TypeScript based hot reload engine",
   "author": "Yash",
   "license": "MIT",
@@ -9,7 +9,9 @@
     "hypre": "dist/index.js"
   },
   "files": [
-    "dist", "README.md", "LICENSE"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",
