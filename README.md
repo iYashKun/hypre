@@ -98,10 +98,10 @@ hypre init
 hypre --v
 ```
 
-`hypre run dev` runs `npm run dev` and watches source files plus
+**`hypre run dev` runs `npm run dev` and watches source files plus
 `package.json`. `hypre restart` requests a restart from the Hypre session
 running in the current project. `hypre init` creates `hypre.config.json` and
-never overwrites an existing file.
+never overwrites an existing file.**
 
 **By default Hypre watches the current project directory recursively. You can
 optionally choose a different directory:**
