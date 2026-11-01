@@ -8,6 +8,7 @@ export const defaultConfig: ReloadConfig = {
     "**/.git/**",
     "**/dist/**",
     "**/build/**",
+    "**/target/**",
     "**/__pycache__/**",
     "**/.next/**",
     "**/vendor/**"

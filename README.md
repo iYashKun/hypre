@@ -34,10 +34,10 @@ once and keep coding.
 
 ## Supported languages
 
-> **HTML (.html), Python (.py), JavaScript (.js), TypeScript (.ts, .tsx), Ruby (.rb), Go (.go)**
+> **HTML (.html), Python (.py), JavaScript (.js), TypeScript (.ts, .tsx), Ruby (.rb), Go (.go), Rust (.rs), PHP (.php)**
 
 Install the relevant language runtime separately. Hypre does not bundle
-Python, Node.js, Ruby or Go.
+Python, Node.js, Ruby, Go, Rust (Cargo) or PHP.
 
 ## Installation
 
@@ -83,6 +83,8 @@ npx @yashkun/hypre app.py
 hypre app.py
 hypre app.ts
 hypre main.go
+hypre src/main.rs
+hypre index.php
 hypre index.html
 ```
 
@@ -128,6 +130,7 @@ Status      : ACTIVE
     "**/.git/**",
     "**/dist/**",
     "**/build/**",
+    "**/target/**",
     "**/.next/**",
     "**/__pycache__/**",
     "**/vendor/**",

@@ -6,6 +6,8 @@ import { javascriptRunner } from "./javascript";
 import { typescriptRunner } from "./typescript";
 import { rubyRunner } from "./ruby";
 import { goRunner } from "./go";
+import { rustRunner } from "./rust";
+import { phpRunner } from "./php";
 
 const runners: Record<string, (file: string) => RunnerDefinition> = {
   ".py": pythonRunner,
@@ -13,7 +15,9 @@ const runners: Record<string, (file: string) => RunnerDefinition> = {
   ".ts": typescriptRunner,
   ".tsx": typescriptRunner,
   ".rb": rubyRunner,
-  ".go": goRunner
+  ".go": goRunner,
+  ".rs": rustRunner,
+  ".php": phpRunner
 };
 
 export function getRunner(file: string): RunnerDefinition {
