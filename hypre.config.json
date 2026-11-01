@@ -9,7 +9,6 @@
   "proxy": {
     "enabled": false,
     "port": 3000,
-    "healthPath": "/",
     "readinessTimeoutMs": 10000
   },
   "ignore": [
