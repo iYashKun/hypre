@@ -21,10 +21,10 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "chokidar": "^4.0.3",
+    "chokidar": "^6.0.0",
     "tree-kill": "^1.2.2",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^7.0.2"
   },
   "devDependencies": {
     "@types/node": "^26.6.6"
