@@ -208,7 +208,3 @@ hypre app.py
 ## Support
 
 **💙 If you like this project give it a ⭐ and share it with friends!**
-
-------------------------------------------------------------------------
-
-**_Made with ❤️ by Yash_**
