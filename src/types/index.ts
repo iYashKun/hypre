@@ -3,6 +3,7 @@ import type { ChildProcess } from "node:child_process";
 export interface RunnerDefinition {
   command: string;
   args: string[];
+  shell?: boolean;
   env?: NodeJS.ProcessEnv;
   build?: {
     command: string;
