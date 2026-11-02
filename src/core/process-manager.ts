@@ -95,7 +95,7 @@ export class ProcessManager {
       cwd: this.cwd,
       env: { ...process.env, ...runner.env, ...options.env },
       stdio: ["inherit", "pipe", "pipe"],
-      shell: false,
+      shell: runner.shell ?? false,
       windowsHide: true
     });
 
