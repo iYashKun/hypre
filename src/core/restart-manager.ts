@@ -3,6 +3,7 @@ import { loadEnvFile } from "../utils/env";
 import { logger } from "../utils/logger";
 import { ProcessManager, type ProcessStartOptions } from "./process-manager";
 import { LiveProxyServer } from "./live-proxy";
+import { waitForHttpReady } from "../utils/readiness";
 
 export class RestartManager {
   private timer: NodeJS.Timeout | null = null;
@@ -19,7 +20,9 @@ export class RestartManager {
     private readonly runner: RunnerDefinition,
     private readonly config: ReloadConfig,
     private readonly envFile: string,
-    private readonly proxy: LiveProxyServer | null = null
+    private readonly proxy: LiveProxyServer | null = null,
+    private readonly readyUrl?: string,
+    private readonly readinessTimeoutMs = 10000
   ) {}
 
   getStatus(): EngineStatus {
@@ -58,13 +61,13 @@ export class RestartManager {
 
   async start(): Promise<void> {
     this.processManager.setCrashHandler(() => this.handleCrash());
-    this.started = true;
     try {
       await this.processManager.start(this.runner, await this.startOptions());
       this.errorGroups.clear();
     } catch (error) {
       this.reportFailure(error);
     }
+    this.started = true;
     if (this.pendingRestart) {
       this.pendingRestart = false;
       this.scheduleRestart(0);
@@ -96,8 +99,10 @@ export class RestartManager {
       if (!this.proxy) throw new Error("Proxy mode is enabled but the proxy server is unavailable");
       const port = await this.proxy.reserveCandidatePort();
       options.env = { ...options.env, PORT: String(port) };
-      options.waitUntilReady = () => this.proxy!.waitUntilReady(port);
+      options.waitUntilReady = (signal) => this.proxy!.waitUntilReady(port, signal);
       options.onPromote = () => this.proxy!.promote(port);
+    } else if (this.readyUrl) {
+      options.waitUntilReady = (signal) => waitForHttpReady(this.readyUrl!, this.readinessTimeoutMs, signal);
     }
 
     return options;
