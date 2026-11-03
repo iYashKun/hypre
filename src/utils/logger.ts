@@ -2,7 +2,9 @@ const colors = { reset: "\x1b[0m", red: "\x1b[31m", green: "\x1b[32m", yellow: "
 
 function log(level: string, color: string, message: string): void {
   const time = new Date().toLocaleTimeString();
-  console.log(`${colors.gray}[${time}]${colors.reset} ${color}[${level}]${colors.reset} ${message}`);
+  const output = `${colors.gray}[${time}]${colors.reset} ${color}[${level}]${colors.reset} ${message}`;
+  if (level === "ERROR") console.error(output);
+  else console.log(output);
 }
 
 export const logger = {
