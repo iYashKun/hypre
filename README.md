@@ -32,7 +32,7 @@ once and keep coding.
 -   **Multi-language runner support**
 -   **Recursive file watching**
 -   **Debounced change detection to reduce duplicate restarts**
--   **Static HTML preview with automatic browser reload on port 8888**
+-   **Static HTML preview with automatic browser reload, starting at port 8888 and incrementing if busy**
 -   **Simple CLI designed for local or global use**
 
 ## Supported languages
@@ -114,8 +114,10 @@ hypre app.py ./src
 **Hypre watches the selected directory recursively and restarts the entry
 when supported source files change. This includes local imported modules
 within that directory; dependencies under `node_modules` are ignored. For an
-HTML entry, it serves the entry directory at `http://localhost:8888` and
-reloads the browser when HTML or static assets change.**
+HTML entry, it serves the entry directory starting at `http://localhost:8888`
+and reloads the browser when HTML or static assets change. If the configured
+preview port is busy, Hypre tries the next port (for example, `8889`, then
+`8890`).**
 
 For HTTP servers, enable `proxy` in `hypre.config.json` and have the app bind
 to the `PORT` environment variable. Hypre starts each replacement on a
