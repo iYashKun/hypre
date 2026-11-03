@@ -180,7 +180,8 @@ Status      : ACTIVE
     "**/.git/**",
     "**/dist/**",
     "**/build/**",
-    "**/bin/**",
+    "**/bin/Debug/**",
+    "**/bin/Release/**",
     "**/obj/**",
     "**/target/**",
     "**/.next/**",
@@ -191,7 +192,8 @@ Status      : ACTIVE
 }
 ```
 
-Configured `ignore` patterns are added to Hypre's built-in exclusions.
+When `ignore` is set in `hypre.config.json`, it replaces the built-in ignore
+list; include any default exclusions you still need.
 
 `watchRules` is optional. Without it, every non-ignored file change in the
 watch scope restarts the program or matching workspace service. Add rules only
