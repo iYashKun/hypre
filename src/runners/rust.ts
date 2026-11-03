@@ -24,8 +24,14 @@ export function rustRunner(file: string): RunnerDefinition {
   const relativeFile = path.relative(path.dirname(manifest), path.resolve(file));
   const segments = relativeFile.split(path.sep);
 
-  if (segments.length === 3 && segments[0] === "src" && segments[1] === "bin") {
-    args.push("--bin", path.basename(file, ".rs"));
+  if (segments[0] === "src" && segments[1] === "bin") {
+    const binaryPath = segments.slice(2);
+    const binaryName = binaryPath.length === 1
+      ? path.basename(file, ".rs")
+      : binaryPath.length === 2 && binaryPath[1] === "main.rs"
+        ? binaryPath[0]
+        : undefined;
+    if (binaryName) args.push("--bin", binaryName);
   }
 
   return {
