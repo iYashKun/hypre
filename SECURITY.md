@@ -4,4 +4,4 @@ Security updates are provided for the latest version of hypre.
 
 ## Reporting a vulnerability
 
-You may report suspected minor vulnerabilities through a GitHub issue. Include the affected endpoint or feature and steps to reproduce the issue. For sensitive issues, use GitHub's Security Advisories reporting feature through the Security and Quality tab of the repository.
+Please report all suspected vulnerabilities privately through GitHub Security Advisories. Do not disclose vulnerability details in a public issue. Include the affected version, feature, impact and reproduction steps in the advisory.
