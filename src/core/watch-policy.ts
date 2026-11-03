@@ -10,7 +10,9 @@ import { loadEnvFile } from "../utils/env";
 export class WatchPolicyDispatcher {
   private readonly rules: Array<{ rule: WatchRule; matches: (file: string) => boolean }>;
   private readonly commandTimers = new Map<number, NodeJS.Timeout>();
-  private readonly commandChildren = new Set<ChildProcess>();
+  private readonly commandRuns = new Map<number, Promise<void>>();
+  private readonly pendingCommands = new Map<number, { rule: WatchRule; file: string }>();
+  private readonly commandChildren = new Map<number, ChildProcess>();
   private stopped = false;
 
   constructor(
@@ -53,7 +55,9 @@ export class WatchPolicyDispatcher {
     this.stopped = true;
     for (const timer of this.commandTimers.values()) clearTimeout(timer);
     this.commandTimers.clear();
-    await Promise.all([...this.commandChildren].map((child) => this.stopCommand(child)));
+    this.pendingCommands.clear();
+    await Promise.all([...this.commandChildren.values()].map((child) => this.stopCommand(child)));
+    await Promise.all(this.commandRuns.values());
   }
 
   private scheduleCommand(index: number, rule: WatchRule, file: string): void {
@@ -62,10 +66,31 @@ export class WatchPolicyDispatcher {
     this.commandTimers.set(index, setTimeout(() => {
       this.commandTimers.delete(index);
       if (this.stopped) return;
+      if (this.commandRuns.has(index)) {
+        this.pendingCommands.set(index, { rule, file });
+        return;
+      }
+
+      const run = this.runCommand(index, rule, file);
+      this.commandRuns.set(index, run);
+      const finish = () => {
+        if (this.commandRuns.get(index) !== run) return;
+        this.commandRuns.delete(index);
+        const pending = this.pendingCommands.get(index);
+        this.pendingCommands.delete(index);
+        if (pending && !this.stopped) this.scheduleCommand(index, pending.rule, pending.file);
+      };
+      void run.then(finish, finish);
+    }, this.debounceMs));
+  }
+
+  private async runCommand(index: number, rule: WatchRule, file: string): Promise<void> {
+    try {
+      const env = await loadEnvFile(path.join(this.root, ".env"));
+      if (this.stopped) return;
       const cwd = rule.cwd ? path.resolve(this.root, rule.cwd) : this.root;
       logger.info(`Running watch command for ${path.relative(this.root, file)}`);
-      void loadEnvFile(path.join(this.root, ".env")).then((env) => {
-        if (this.stopped) return;
+      await new Promise<void>((resolve) => {
         const child = spawn(rule.command!, rule.args ?? [], {
           cwd,
           env: { ...process.env, ...env },
@@ -73,17 +98,26 @@ export class WatchPolicyDispatcher {
           shell: rule.shell ?? false,
           windowsHide: true
         });
-        this.commandChildren.add(child);
-        child.once("close", () => this.commandChildren.delete(child));
-        child.once("error", () => this.commandChildren.delete(child));
-        child.once("error", (error) => logger.error(`Watch command failed: ${error.message}`));
+        this.commandChildren.set(index, child);
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          if (this.commandChildren.get(index) === child) this.commandChildren.delete(index);
+          resolve();
+        };
+        child.once("error", (error) => {
+          logger.error(`Watch command failed: ${error.message}`);
+          finish();
+        });
         child.once("close", (code, signal) => {
           if (!this.stopped && code !== 0) logger.error(`Watch command exited | Code: ${code} | Signal: ${signal ?? "none"}`);
+          finish();
         });
-      }).catch((error: unknown) => {
-        logger.error(error instanceof Error ? error.message : String(error));
       });
-    }, this.debounceMs));
+    } catch (error) {
+      logger.error(error instanceof Error ? error.message : String(error));
+    }
   }
 
   private async stopCommand(child: ChildProcess): Promise<void> {
