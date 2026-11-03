@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import http, { type Server, type ServerResponse } from "node:http";
 import path from "node:path";
 import { logger } from "../utils/logger";
@@ -24,6 +24,7 @@ const liveReloadScript = `<script>(()=>{const events=new EventSource('/__hypre_r
 
 export class IPreviewServer {
   private server: Server | null = null;
+  private resolvedRoot: string | null = null;
   private readonly clients = new Set<ServerResponse>();
 
   constructor(
@@ -33,6 +34,8 @@ export class IPreviewServer {
   ) {}
 
   async start(): Promise<void> {
+    if (this.server) return;
+    this.resolvedRoot = await realpath(this.root);
     for (let port = this.port; port <= 65535; port += 1) {
       const server = http.createServer((request, response) => {
         void this.handleRequest(request.url || "/", response);
@@ -65,6 +68,7 @@ export class IPreviewServer {
   async stop(): Promise<void> {
     for (const client of this.clients) client.end();
     this.clients.clear();
+    this.resolvedRoot = null;
 
     if (!this.server) return;
     await new Promise<void>((resolve, reject) => {
@@ -94,24 +98,38 @@ export class IPreviewServer {
       return;
     }
 
+    const root = this.resolvedRoot;
+    if (!root) {
+      response.writeHead(503).end("Preview server is unavailable");
+      return;
+    }
+
     const requestedPath = pathname === "/"
-      ? path.join(this.root, this.entryFile)
-      : path.resolve(this.root, `.${pathname}`);
-    if (requestedPath !== this.root && !requestedPath.startsWith(`${this.root}${path.sep}`)) {
+      ? path.join(root, this.entryFile)
+      : path.resolve(root, `.${pathname}`);
+    const relativePath = path.relative(root, requestedPath);
+    if (relativePath === ".." || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
       response.writeHead(403).end("Forbidden");
       return;
     }
 
     try {
-      if (!(await stat(requestedPath)).isFile()) {
+      const resolvedPath = await realpath(requestedPath);
+      const relativeResolvedPath = path.relative(root, resolvedPath);
+      if (relativeResolvedPath === ".." || relativeResolvedPath.startsWith(`..${path.sep}`) || path.isAbsolute(relativeResolvedPath)) {
+        response.writeHead(403).end("Forbidden");
+        return;
+      }
+
+      if (!(await stat(resolvedPath)).isFile()) {
         response.writeHead(404).end("Not found");
         return;
       }
 
-      const contentType = contentTypes[path.extname(requestedPath).toLowerCase()] || "application/octet-stream";
+      const contentType = contentTypes[path.extname(resolvedPath).toLowerCase()] || "application/octet-stream";
       response.setHeader("Content-Type", contentType);
       if (contentType.startsWith("text/html")) {
-        const html = await readFile(requestedPath, "utf8");
+        const html = await readFile(resolvedPath, "utf8");
         const closingBody = /<\/body\s*>/i;
         const injectedHtml = closingBody.test(html)
           ? html.replace(closingBody, `${liveReloadScript}</body>`)
@@ -120,7 +138,7 @@ export class IPreviewServer {
         return;
       }
 
-      createReadStream(requestedPath).on("error", () => {
+      createReadStream(resolvedPath).on("error", () => {
         if (!response.headersSent) response.writeHead(500);
         response.end("Unable to read file");
       }).pipe(response);
