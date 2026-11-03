@@ -131,8 +131,8 @@ is busy, Hypre tries the next port (for example, `8889`, then `8890`).**
 
 For HTTP servers, enable `proxy` in `hypre.config.json` and have the app bind
 to the `PORT` environment variable. Hypre starts each replacement on a
-separate local port, waits for the configured health path to return a
-successful response, switches proxy traffic and then gracefully stops the
+separate local port, waits for `/` to respond with a status below 500, switches
+proxy traffic and then gracefully stops the
 old process. The proxy listens on `proxy.port`. Without proxy mode, a server
 that binds a fixed port may need a brief handoff during restart.
 
