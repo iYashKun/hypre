@@ -121,7 +121,7 @@ function parseServices(value: unknown): Record<string, ServiceConfig> | undefine
   }));
 }
 
-function loadConfig(cwd: string): ProjectConfig {
+export function loadConfig(cwd: string): ProjectConfig {
   const configPath = path.join(cwd, "hypre.config.json");
   if (!fs.existsSync(configPath)) return { ...defaultConfig, proxy: { ...defaultConfig.proxy }, watchRules: [] };
 
@@ -154,7 +154,7 @@ function loadConfig(cwd: string): ProjectConfig {
   return {
     debounceMs: typeof parsed.debounceMs === "number" && Number.isFinite(parsed.debounceMs) && parsed.debounceMs >= 0
       ? parsed.debounceMs : defaultConfig.debounceMs,
-    ignore: [...new Set([...defaultConfig.ignore, ...(parsed.ignore as string[] | undefined ?? [])])],
+    ignore: Array.isArray(parsed.ignore) ? parsed.ignore as string[] : [...defaultConfig.ignore],
     previewPort: typeof parsed.previewPort === "number" && Number.isInteger(parsed.previewPort) && parsed.previewPort > 0 && parsed.previewPort <= 65535
       ? parsed.previewPort : defaultConfig.previewPort,
     startupGraceMs: typeof parsed.startupGraceMs === "number" && Number.isFinite(parsed.startupGraceMs) && parsed.startupGraceMs >= 0
@@ -466,7 +466,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  logger.error(error instanceof Error ? error.stack || error.message : String(error));
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error: unknown) => {
+    logger.error(error instanceof Error ? error.stack || error.message : String(error));
+    process.exitCode = 1;
+  });
+}
