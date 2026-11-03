@@ -16,7 +16,10 @@
     "**/.git/**",
     "**/dist/**",
     "**/build/**",
+    "**/bin/**",
+    "**/obj/**",
     "**/target/**",
+    "**/coverage/**",
     "**/__pycache__/**",
     "**/.next/**",
     "**/vendor/**"
