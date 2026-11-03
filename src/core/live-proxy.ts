@@ -31,20 +31,27 @@ export class LiveProxyServer {
 
   async start(): Promise<void> {
     if (this.server) return;
-    this.server = http.createServer((request, response) => this.proxyRequest(request, response));
-    this.server.on("connection", (socket) => {
+    const server = http.createServer((request, response) => this.proxyRequest(request, response));
+    this.server = server;
+    server.on("connection", (socket) => {
       this.sockets.add(socket);
       socket.once("close", () => this.sockets.delete(socket));
     });
-    this.server.on("upgrade", (request, socket, head) => this.proxyUpgrade(request, socket, head));
+    server.on("upgrade", (request, socket, head) => this.proxyUpgrade(request, socket, head));
 
-    await new Promise<void>((resolve, reject) => {
-      this.server!.once("error", reject);
-      this.server!.listen(this.port, "127.0.0.1", () => {
-        this.server!.removeListener("error", reject);
-        resolve();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(this.port, "127.0.0.1", () => {
+          server.removeAllListeners("error");
+          resolve();
+        });
       });
-    });
+    } catch (error) {
+      this.server = null;
+      if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
@@ -78,11 +85,11 @@ export class LiveProxyServer {
     return address.port;
   }
 
-  async waitUntilReady(port: number): Promise<void> {
+  async waitUntilReady(port: number, signal?: AbortSignal): Promise<void> {
     const deadline = Date.now() + this.readinessTimeoutMs;
 
-    while (Date.now() < deadline) {
-      const host = await this.probe(port);
+    while (Date.now() < deadline && !signal?.aborted) {
+      const host = await this.probe(port, signal);
       if (host) {
         this.candidateHosts.set(port, host);
         return;
@@ -90,6 +97,7 @@ export class LiveProxyServer {
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
     }
 
+    if (signal?.aborted) throw new Error("Readiness check aborted");
     throw new Error(`Readiness check timed out after ${this.readinessTimeoutMs}ms at / on port ${port}`);
   }
 
@@ -158,11 +166,16 @@ export class LiveProxyServer {
 
   private async waitForRequests(port: number): Promise<void> {
     if (!this.inFlight.has(port)) return;
-    await Promise.race([
-      new Promise<void>((resolve) => this.drainWaiters.set(port, resolve)),
-      new Promise<void>((resolve) => setTimeout(resolve, this.drainTimeoutMs))
-    ]);
-    this.drainWaiters.delete(port);
+    await new Promise<void>((resolve) => {
+      let timer: NodeJS.Timeout;
+      const finish = () => {
+        clearTimeout(timer);
+        if (this.drainWaiters.get(port) === finish) this.drainWaiters.delete(port);
+        resolve();
+      };
+      this.drainWaiters.set(port, finish);
+      timer = setTimeout(finish, this.drainTimeoutMs);
+    });
   }
 
   private forwardHeaders(request: http.IncomingMessage): http.OutgoingHttpHeaders {
@@ -198,10 +211,10 @@ export class LiveProxyServer {
     socket.on("error", () => upstream.destroy());
   }
 
-  private async probe(port: number): Promise<string | null> {
+  private async probe(port: number, signal?: AbortSignal): Promise<string | null> {
     const hosts = ["127.0.0.1", "::1"];
     const results = await Promise.all(hosts.map((hostname) => new Promise<string | null>((resolve) => {
-      const request = http.get({ hostname, port, path: "/" }, (response) => {
+      const request = http.get({ hostname, port, path: "/", signal }, (response) => {
         response.resume();
         resolve((response.statusCode ?? 500) < 500 ? hostname : null);
       });
