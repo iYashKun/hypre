@@ -1,6 +1,6 @@
 {
   "name": "@yashkun/hypre",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "description": "a universal TypeScript based hot reload engine",
   "author": "Yash",
   "license": "MIT",
@@ -23,12 +23,14 @@
   "dependencies": {
     "chokidar": "^6.0.0",
     "dotenv": "^18.0.9",
+    "picomatch": "^4.0.7",
     "tree-kill": "^1.2.2",
     "tsx": "^4.19.0",
     "typescript": "^7.0.2"
   },
   "devDependencies": {
-    "@types/node": "^26.6.6"
+    "@types/node": "^26.6.6",
+    "@types/picomatch": "^4.0.3"
   },
   "publishConfig": {
     "access": "public"
