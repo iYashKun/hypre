@@ -1,5 +1,6 @@
 import type { FSWatcher } from "chokidar" with { "resolution-mode": "import" };
 import path from "node:path";
+import picomatch from "picomatch";
 
 import type { ReloadConfig } from "../types";
 import { getSupportedExtensions } from "../runners";
@@ -21,8 +22,12 @@ export class FileWatcher {
   async start(): Promise<void> {
     const { default: chokidar } = await import("chokidar");
     const watchPaths = [this.directory, ...new Set(this.additionalFiles.map((file) => path.dirname(file)))];
+    const ignoredMatchers = this.config.ignore.map((pattern) => picomatch(pattern, { dot: true }));
     this.watcher = chokidar.watch(watchPaths, {
-      ignored: this.config.ignore,
+      ignored: (file) => {
+        const relative = path.relative(path.resolve(this.directory), path.resolve(file)).split(path.sep).join("/");
+        return ignoredMatchers.some((matches) => matches(relative));
+      },
       ignoreInitial: true,
       persistent: true
     });
