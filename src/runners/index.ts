@@ -8,6 +8,8 @@ import { rubyRunner } from "./ruby";
 import { goRunner } from "./go";
 import { rustRunner } from "./rust";
 import { phpRunner } from "./php";
+import { cRunner, cppRunner } from "./native";
+import { csharpRunner } from "./csharp";
 
 const runners: Record<string, (file: string, cwd?: string) => RunnerDefinition> = {
   ".py": pythonRunner,
@@ -17,7 +19,13 @@ const runners: Record<string, (file: string, cwd?: string) => RunnerDefinition> 
   ".rb": rubyRunner,
   ".go": goRunner,
   ".rs": rustRunner,
-  ".php": phpRunner
+  ".php": phpRunner,
+  ".c": cRunner,
+  ".cc": cppRunner,
+  ".cpp": cppRunner,
+  ".cxx": cppRunner,
+  ".c++": cppRunner,
+  ".cs": csharpRunner
 };
 
 export function getRunner(file: string, cwd = process.cwd()): RunnerDefinition {
