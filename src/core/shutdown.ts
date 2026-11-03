@@ -1,7 +1,10 @@
 import { logger } from "../utils/logger";
-import { FileWatcher } from "./watcher";
 
-export function registerShutdown(watcher: FileWatcher, cleanup: () => Promise<void>): void {
+export interface Stoppable {
+  stop(): Promise<void>;
+}
+
+export function registerShutdown(watcher: Stoppable, cleanup: () => Promise<void>): void {
   let shuttingDown = false;
   
   const shutdown = async (): Promise<void> => {
