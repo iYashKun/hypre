@@ -1,6 +1,6 @@
 {
   "name": "@yashkun/hypre",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "a universal TypeScript based hot reload engine",
   "engines": {
     "node": ">=22.22.0"
