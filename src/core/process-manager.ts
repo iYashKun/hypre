@@ -20,10 +20,12 @@ interface ManagedProcess {
   child: ChildProcess;
   stderr: string;
   exited: boolean;
+  closed: boolean;
   startedAt: number;
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   exitPromise: Promise<void>;
+  closePromise: Promise<void>;
   artifactPath: string | null;
 }
 
@@ -129,14 +131,17 @@ export class ProcessManager {
     });
 
     let resolveExit!: () => void;
+    let resolveClose!: () => void;
     const record: ManagedProcess = {
       child,
       stderr: "",
       exited: false,
+      closed: false,
       startedAt: Date.now(),
       exitCode: null,
       signal: null,
       exitPromise: new Promise<void>((resolve) => { resolveExit = resolve; }),
+      closePromise: new Promise<void>((resolve) => { resolveClose = resolve; }),
       artifactPath
     };
     this.candidates.add(record);
@@ -148,22 +153,32 @@ export class ProcessManager {
     });
 
     child.on("exit", (code, signal) => {
-      record.exitCode = code;
-      record.signal = signal;
-      logger.info(`Process exited | Code: ${code} | Signal: ${signal ?? "none"}`);
-    });
-
-    child.on("close", (code, signal) => {
       record.exited = true;
       record.exitCode = code;
       record.signal = signal;
-      this.candidates.delete(record);
       resolveExit();
-      if (record.artifactPath) void rm(record.artifactPath, { force: true }).catch(() => {});
+      logger.info(`Process exited | Code: ${code} | Signal: ${signal ?? "none"}`);
+      if (record.child.pid && !record.closed) void this.terminate(record, 1000);
       if (this.active === record) {
         this.active = null;
         if (code !== 0 || signal !== null) this.crashHandler?.();
       }
+    });
+
+    child.on("close", (code, signal) => {
+      if (!record.exited) {
+        record.exited = true;
+        record.exitCode = code;
+        record.signal = signal;
+        resolveExit();
+      }
+      record.closed = true;
+      record.exited = true;
+      record.exitCode = code;
+      record.signal = signal;
+      this.candidates.delete(record);
+      resolveClose();
+      if (record.artifactPath) void rm(record.artifactPath, { force: true }).catch(() => {});
     });
 
     try {
@@ -294,25 +309,25 @@ export class ProcessManager {
   }
 
   private async terminate(record: ManagedProcess, timeoutMs: number): Promise<void> {
-    if (record.exited || !record.child.pid) return;
+    if (record.closed || !record.child.pid) return;
 
     await signalProcessTree(record.child.pid, "SIGTERM").catch((error: unknown) => {
       if (!record.exited) logger.warn(`Graceful termination: ${error instanceof Error ? error.message : String(error)}`);
     });
 
-    if (await this.waitForExit(record, timeoutMs)) return;
+    if (await this.waitForClose(record, timeoutMs)) return;
 
     logger.warn(`Process did not exit within ${timeoutMs}ms; forcing termination`);
     await signalProcessTree(record.child.pid, "SIGKILL").catch(() => {});
-    await this.waitForExit(record, 1000);
+    await this.waitForClose(record, 1000);
   }
 
-  private async waitForExit(record: ManagedProcess, timeoutMs: number): Promise<boolean> {
-    if (record.exited) return true;
+  private async waitForClose(record: ManagedProcess, timeoutMs: number): Promise<boolean> {
+    if (record.closed) return true;
 
     let timer: NodeJS.Timeout;
     const timedOut = await Promise.race([
-      record.exitPromise.then(() => false),
+      record.closePromise.then(() => false),
       new Promise<true>((resolve) => {
         timer = setTimeout(() => resolve(true), timeoutMs);
       })
