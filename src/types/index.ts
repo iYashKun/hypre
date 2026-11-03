@@ -3,6 +3,7 @@ import type { ChildProcess } from "node:child_process";
 export interface RunnerDefinition {
   command: string;
   args: string[];
+  cwd?: string;
   shell?: boolean;
   env?: NodeJS.ProcessEnv;
   build?: {
@@ -27,6 +28,34 @@ export interface ReloadConfig {
   };
 }
 
+export type WatchRuleAction = "ignore" | "restart" | "preview-reload" | "command";
+
+export interface WatchRule {
+  pattern: string;
+  action: WatchRuleAction;
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  shell?: boolean;
+}
+
+export interface ServiceConfig {
+  entry?: string;
+  script?: string;
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  watch?: string[];
+  dependsOn?: string[];
+  env?: NodeJS.ProcessEnv;
+  shell?: boolean;
+}
+
+export interface ProjectConfig extends ReloadConfig {
+  watchRules: WatchRule[];
+  services?: Record<string, ServiceConfig>;
+}
+
 export interface EngineState {
   child: ChildProcess | null;
   shuttingDown: boolean;
@@ -39,4 +68,5 @@ export interface EngineStatus {
   lastSuccessfulRestartAt: string | null;
   restartLoopPaused: boolean;
   restartFailures: number;
+  services?: Record<string, EngineStatus>;
 }
