@@ -1,6 +1,6 @@
 {
   "name": "@yashkun/hypre",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "a universal TypeScript based hot reload engine",
   "author": "Yash",
   "license": "MIT",
