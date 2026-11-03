@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
@@ -22,9 +22,15 @@ function isProcessRunning(pid: number): boolean {
   }
 }
 
+function getStatePath(cwd: string): string {
+  const key = createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 20);
+  return path.join(os.homedir(), ".hypre", `hypre-${key}.json`);
+}
+
 export class ControlServer {
   private readonly statePath: string;
   private readonly token = randomBytes(24).toString("hex");
+  private readonly sockets = new Set<net.Socket>();
   private server: net.Server | null = null;
 
   constructor(
@@ -32,25 +38,52 @@ export class ControlServer {
     private readonly restart: (service?: string) => Promise<void>,
     private readonly getStatus: () => EngineStatus
   ) {
-    const key = createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 20);
-    this.statePath = path.join(os.tmpdir(), `hypre-${key}.json`);
+    this.statePath = getStatePath(cwd);
   }
 
   async start(): Promise<void> {
     this.server = net.createServer((socket) => {
+      this.sockets.add(socket);
+      socket.once("close", () => this.sockets.delete(socket));
       socket.on("error", () => socket.destroy());
+      socket.setTimeout(5000, () => socket.destroy());
       let buffer = "";
+      let authenticated = false;
+      let handled = false;
       socket.setEncoding("utf8");
       socket.on("data", (chunk) => {
+        if (handled) return;
         buffer += chunk;
         if (buffer.length > 2048) {
+          handled = true;
           socket.end(JSON.stringify({ ok: false, error: "Invalid request" }) + "\n");
           return;
         }
-        const newline = buffer.indexOf("\n");
-        if (newline < 0) return;
-        const line = buffer.slice(0, newline);
-        void this.handleRequest(socket, line);
+        let newline = buffer.indexOf("\n");
+        while (newline >= 0 && !handled) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          newline = buffer.indexOf("\n");
+          if (!authenticated) {
+            let challenge: unknown;
+            try {
+              challenge = (JSON.parse(line) as { challenge?: unknown }).challenge;
+            } catch {
+              challenge = undefined;
+            }
+            if (typeof challenge !== "string" || !/^[a-f0-9]{48}$/.test(challenge)) {
+              handled = true;
+              socket.end(JSON.stringify({ ok: false, error: "Invalid handshake" }) + "\n");
+              return;
+            }
+            const proof = createHmac("sha256", this.token).update(challenge).digest("hex");
+            socket.write(JSON.stringify({ proof }) + "\n");
+            authenticated = true;
+            continue;
+          }
+          handled = true;
+          void this.handleRequest(socket, line);
+        }
       });
     });
 
@@ -71,9 +104,12 @@ export class ControlServer {
     const server = this.server;
     this.server = null;
     if (server) {
-      await new Promise<void>((resolve, reject) => {
+      const closed = new Promise<void>((resolve, reject) => {
         server.close((error) => error ? reject(error) : resolve());
       });
+      for (const socket of this.sockets) socket.destroy();
+      this.sockets.clear();
+      await closed;
     }
 
     try {
@@ -112,6 +148,14 @@ export class ControlServer {
   }
 
   private async writeStateFile(state: ControlState): Promise<void> {
+    const directory = path.dirname(this.statePath);
+    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+    const directoryStats = await fs.stat(directory);
+    if (!directoryStats.isDirectory() || (process.getuid && directoryStats.uid !== process.getuid())) {
+      throw new Error("Hypre control state directory is not private to this user");
+    }
+    await fs.chmod(directory, 0o700);
+
     const create = async (): Promise<void> => {
       const file = await fs.open(this.statePath, "wx", 0o600);
       try {
@@ -162,8 +206,7 @@ interface ControlResponse {
 }
 
 async function requestControl(cwd: string, command: "restart" | "status", service?: string): Promise<ControlResponse> {
-  const key = createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 20);
-  const statePath = path.join(os.tmpdir(), `hypre-${key}.json`);
+  const statePath = getStatePath(cwd);
   let state: ControlState;
   try {
     state = JSON.parse(await fs.readFile(statePath, "utf8")) as ControlState;
@@ -177,25 +220,49 @@ async function requestControl(cwd: string, command: "restart" | "status", servic
   return await new Promise<ControlResponse>((resolve, reject) => {
     const socket = net.createConnection({ port: state.port, host: "127.0.0.1" });
     let response = "";
+    let authenticated = false;
+    const challenge = randomBytes(24).toString("hex");
     const timer = setTimeout(() => {
       socket.destroy();
-      reject(new Error("Timed out waiting for Hypre restart"));
+      reject(new Error("Timed out waiting for Hypre control response"));
     }, 5000);
 
     socket.once("connect", () => {
-      socket.write(`${JSON.stringify({ token: state.token, command, ...(service ? { service } : {}) })}\n`);
+      socket.write(`${JSON.stringify({ challenge })}\n`);
     });
     socket.on("data", (chunk) => {
       response += chunk.toString();
-      const newline = response.indexOf("\n");
-      if (newline < 0) return;
-      clearTimeout(timer);
-      socket.end();
-      try {
-        const result = JSON.parse(response.slice(0, newline)) as ControlResponse;
+      let newline = response.indexOf("\n");
+      while (newline >= 0) {
+        const line = response.slice(0, newline);
+        response = response.slice(newline + 1);
+        newline = response.indexOf("\n");
+        let result: ControlResponse & { proof?: string };
+        try {
+          result = JSON.parse(line) as ControlResponse & { proof?: string };
+        } catch (error) {
+          clearTimeout(timer);
+          socket.destroy();
+          reject(error);
+          return;
+        }
+        if (!authenticated) {
+          const expected = Buffer.from(createHmac("sha256", state.token).update(challenge).digest("hex"), "hex");
+          const provided = typeof result.proof === "string" ? Buffer.from(result.proof, "hex") : Buffer.alloc(0);
+          if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+            clearTimeout(timer);
+            socket.destroy();
+            reject(new Error("Hypre control server identity check failed"));
+            return;
+          }
+          authenticated = true;
+          socket.write(`${JSON.stringify({ token: state.token, command, ...(service ? { service } : {}) })}\n`);
+          continue;
+        }
+        clearTimeout(timer);
+        socket.end();
         resolve(result);
-      } catch (error) {
-        reject(error);
+        return;
       }
     });
     socket.once("error", (error) => {
