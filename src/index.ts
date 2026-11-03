@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { defaultConfig } from "./config/default";
-import { ControlServer, requestRestart } from "./core/control-server";
+import { ControlServer, requestRestart, requestStatus } from "./core/control-server";
 import { IPreviewServer } from "./core/preview-server";
 import { ProcessManager } from "./core/process-manager";
 import { LiveProxyServer } from "./core/live-proxy";
@@ -64,15 +64,38 @@ function printUsage(): void {
   hypre <entry-file> [watch-directory]
   hypre run <npm-script> [watch-directory]
   hypre restart
+  hypre status
   hypre init
-  hypre --version
-  hypre -h | --help`);
+  hypre --v
+  hypre --help`);
 }
 
 function printVersion(): void {
   const packagePath = path.resolve(__dirname, "../package.json");
   const packageJson = JSON.parse(fs.readFileSync(packagePath, "utf8")) as { version: string };
   console.log(packageJson.version);
+}
+
+function formatDuration(milliseconds: number): string {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return days > 0
+    ? `${days}d ${hours}h ${minutes}m ${seconds}s`
+    : hours > 0
+      ? `${hours}h ${minutes}m ${seconds}s`
+      : `${minutes}m ${seconds}s`;
+}
+
+async function printStatus(cwd: string): Promise<void> {
+  const status = await requestStatus(cwd);
+  console.log(`Process       : ${status.active ? "running" : "stopped"}`);
+  console.log(`PID           : ${status.pid ?? "-"}`);
+  console.log(`Uptime        : ${status.uptimeMs === null ? "-" : formatDuration(status.uptimeMs)}`);
+  console.log(`Last restart  : ${status.lastSuccessfulRestartAt ? new Date(status.lastSuccessfulRestartAt).toLocaleString() : "Never"}`);
+  console.log(`Restart loop  : ${status.restartLoopPaused ? "PAUSED" : "active"} (${status.restartFailures} recent failures)`);
 }
 
 function ensureNpmScript(cwd: string, scriptName: string): void {
@@ -107,6 +130,10 @@ async function main(): Promise<void> {
   if (command === "restart") {
     await requestRestart(cwd);
     logger.success("Restart request completed");
+    return;
+  }
+  if (command === "status") {
+    await printStatus(cwd);
     return;
   }
   if (!command) {
@@ -154,11 +181,12 @@ async function main(): Promise<void> {
 
   const processCwd = runScript ? cwd : watchDir;
   const processManager = runner ? new ProcessManager(processCwd) : null;
+  const envFile = path.join(cwd, ".env");
   const proxyServer = runner && config.proxy.enabled
     ? new LiveProxyServer(config.proxy.port, config.proxy.readinessTimeoutMs)
     : null;
   const restartManager = processManager && runner
-    ? new RestartManager(processManager, runner, config, proxyServer)
+    ? new RestartManager(processManager, runner, config, envFile, proxyServer)
     : null;
   const previewServer = isHtmlEntry
     ? new IPreviewServer(path.dirname(entry), path.basename(entry), config.previewPort)
@@ -171,9 +199,12 @@ async function main(): Promise<void> {
     watchDir,
     config,
     () => previewServer ? previewServer.reload() : restartManager?.schedule(),
-    previewServer ? [".html", ".css", ".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"] : watchedExtensions
+    previewServer ? [".html", ".css", ".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"] : watchedExtensions,
+    runner ? [envFile] : []
   );
-  const controlServer = restartManager ? new ControlServer(cwd, () => restartManager.restartNow()) : null;
+  const controlServer = restartManager
+    ? new ControlServer(cwd, () => restartManager.restartNow(), () => restartManager.getStatus())
+    : null;
 
   registerShutdown(watcher, async () => {
     await controlServer?.stop();
