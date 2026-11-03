@@ -1,11 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import picomatch from "picomatch";
-import treeKill from "tree-kill";
 
 import type { WatchRule } from "../types";
 import { logger } from "../utils/logger";
 import { loadEnvFile } from "../utils/env";
+import { signalProcessTree } from "../utils/process";
 
 export class WatchPolicyDispatcher {
   private readonly rules: Array<{ rule: WatchRule; matches: (file: string) => boolean }>;
@@ -89,13 +89,17 @@ export class WatchPolicyDispatcher {
       const env = await loadEnvFile(path.join(this.root, ".env"));
       if (this.stopped) return;
       const cwd = rule.cwd ? path.resolve(this.root, rule.cwd) : this.root;
+      const args = rule.args ?? [];
+      const shell = rule.shell ?? false;
+      const command = shell ? [rule.command!, ...args].join(" ") : rule.command!;
       logger.info(`Running watch command for ${path.relative(this.root, file)}`);
       await new Promise<void>((resolve) => {
-        const child = spawn(rule.command!, rule.args ?? [], {
+        const child = spawn(command, shell ? [] : args, {
           cwd,
           env: { ...process.env, ...env },
           stdio: "inherit",
-          shell: rule.shell ?? false,
+          shell,
+          detached: process.platform !== "win32",
           windowsHide: true
         });
         this.commandChildren.set(index, child);
@@ -123,19 +127,14 @@ export class WatchPolicyDispatcher {
   private async stopCommand(child: ChildProcess): Promise<void> {
     if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
 
-    await new Promise<void>((resolve) => {
-      treeKill(child.pid!, "SIGTERM", (error) => {
-        if (error && child.exitCode === null && child.signalCode === null) {
-          logger.warn(`Watch command termination: ${error.message}`);
-        }
-        resolve();
-      });
+    await signalProcessTree(child.pid, "SIGTERM").catch((error: unknown) => {
+      if (child.exitCode === null && child.signalCode === null) {
+        logger.warn(`Watch command termination: ${error instanceof Error ? error.message : String(error)}`);
+      }
     });
     if (await this.waitForCommandExit(child, 1000)) return;
 
-    await new Promise<void>((resolve) => {
-      treeKill(child.pid!, "SIGKILL", () => resolve());
-    });
+    await signalProcessTree(child.pid, "SIGKILL").catch(() => {});
     await this.waitForCommandExit(child, 1000);
   }
 
