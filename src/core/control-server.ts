@@ -4,10 +4,22 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import type { EngineStatus } from "../types";
+import { logger } from "../utils/logger";
 
 interface ControlState {
   port: number;
   token: string;
+  pid: number;
+}
+
+function isProcessRunning(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
 }
 
 export class ControlServer {
@@ -26,6 +38,7 @@ export class ControlServer {
 
   async start(): Promise<void> {
     this.server = net.createServer((socket) => {
+      socket.on("error", () => socket.destroy());
       let buffer = "";
       socket.setEncoding("utf8");
       socket.on("data", (chunk) => {
@@ -51,7 +64,7 @@ export class ControlServer {
 
     const address = this.server.address();
     if (!address || typeof address === "string") throw new Error("Could not start Hypre control server");
-    await fs.writeFile(this.statePath, JSON.stringify({ port: address.port, token: this.token }), { mode: 0o600 });
+    await this.writeStateFile({ port: address.port, token: this.token, pid: process.pid });
   }
 
   async stop(): Promise<void> {
@@ -86,13 +99,58 @@ export class ControlServer {
         socket.end(JSON.stringify({ ok: false, error: "Invalid service name" }) + "\n");
         return;
       }
-      await this.restart(request.service);
       socket.end(JSON.stringify({ ok: true }) + "\n");
+      void this.restart(request.service).catch((error: unknown) => {
+        logger.error(error instanceof Error ? error.stack || error.message : String(error));
+      });
     } catch (error) {
       socket.end(JSON.stringify({
         ok: false,
         error: error instanceof Error ? error.message : String(error)
       }) + "\n");
+    }
+  }
+
+  private async writeStateFile(state: ControlState): Promise<void> {
+    const create = async (): Promise<void> => {
+      const file = await fs.open(this.statePath, "wx", 0o600);
+      try {
+        await file.writeFile(JSON.stringify(state));
+      } finally {
+        await file.close();
+      }
+    };
+
+    try {
+      await create();
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+
+    const stats = await fs.lstat(this.statePath);
+    if (!stats.isFile() || (process.getuid && stats.uid !== process.getuid())) {
+      throw new Error("Hypre control state path exists and is not a private regular file");
+    }
+
+    let existing: Partial<ControlState> = {};
+    try {
+      existing = JSON.parse(await fs.readFile(this.statePath, "utf8")) as Partial<ControlState>;
+    } catch {
+      // An unreadable state file is stale if its owner process is not running.
+    }
+    if (typeof existing.pid === "number" && isProcessRunning(existing.pid)) {
+      throw new Error("A Hypre session is already running for this project");
+    }
+
+    await fs.unlink(this.statePath);
+    try {
+      await create();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new Error("A Hypre session started concurrently for this project");
+      }
+      throw error;
     }
   }
 }
@@ -110,6 +168,9 @@ async function requestControl(cwd: string, command: "restart" | "status", servic
   try {
     state = JSON.parse(await fs.readFile(statePath, "utf8")) as ControlState;
   } catch {
+    throw new Error("No running Hypre session found in this project");
+  }
+  if (typeof state.token !== "string" || !Number.isInteger(state.port) || state.port < 1 || state.port > 65535 || !isProcessRunning(state.pid)) {
     throw new Error("No running Hypre session found in this project");
   }
 
