@@ -9,7 +9,7 @@ import { goRunner } from "./go";
 import { rustRunner } from "./rust";
 import { phpRunner } from "./php";
 
-const runners: Record<string, (file: string) => RunnerDefinition> = {
+const runners: Record<string, (file: string, cwd?: string) => RunnerDefinition> = {
   ".py": pythonRunner,
   ".js": javascriptRunner,
   ".ts": typescriptRunner,
@@ -20,12 +20,12 @@ const runners: Record<string, (file: string) => RunnerDefinition> = {
   ".php": phpRunner
 };
 
-export function getRunner(file: string): RunnerDefinition {
+export function getRunner(file: string, cwd = process.cwd()): RunnerDefinition {
   const extension = path.extname(file).toLowerCase();
   const runner = runners[extension];
   
   if (!runner) { throw new Error(`Unsupported file extension: ${extension}`); }
-  return runner(file);
+  return runner(file, cwd);
 }
 
 export function getSupportedExtensions(): string[] {
