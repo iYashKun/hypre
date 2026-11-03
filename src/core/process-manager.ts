@@ -104,7 +104,7 @@ export class ProcessManager {
     logger.info(`Executing: ${runner.command} ${runner.args.join(" ")}`);
 
     const child = spawn(runner.command, runner.args, {
-      cwd: this.cwd,
+      cwd: runner.cwd ?? this.cwd,
       env: { ...process.env, ...runner.env, ...options.env },
       stdio: ["inherit", "pipe", "pipe"],
       shell: runner.shell ?? false,
