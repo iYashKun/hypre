@@ -22,7 +22,7 @@ const contentTypes: Record<string, string> = {
 
 const liveReloadScript = `<script>(()=>{const events=new EventSource('/__hypre_reload');events.onmessage=()=>location.reload()})()</script>`;
 
-export class IPreviewServer {
+export class PreviewServer {
   private server: Server | null = null;
   private resolvedRoot: string | null = null;
   private readonly clients = new Set<ServerResponse>();
