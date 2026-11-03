@@ -58,8 +58,13 @@ export class RestartManager {
 
   async start(): Promise<void> {
     this.processManager.setCrashHandler(() => this.handleCrash());
-    await this.processManager.start(this.runner, await this.startOptions());
     this.started = true;
+    try {
+      await this.processManager.start(this.runner, await this.startOptions());
+      this.errorGroups.clear();
+    } catch (error) {
+      this.reportFailure(error);
+    }
     if (this.pendingRestart) {
       this.pendingRestart = false;
       this.scheduleRestart(0);
@@ -72,6 +77,7 @@ export class RestartManager {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    await this.processManager.stop(this.config.shutdownTimeoutMs);
     await this.queue;
     await this.processManager.stop(this.config.shutdownTimeoutMs);
   }
@@ -111,7 +117,9 @@ export class RestartManager {
 
   private queueRestart(): Promise<void> {
     const operation = this.queue.then(() => this.performRestart());
-    this.queue = operation.catch((error: unknown) => this.reportFailure(error));
+    this.queue = operation.catch((error: unknown) => {
+      if (!this.shuttingDown) this.reportFailure(error);
+    });
     return operation;
   }
 
@@ -126,6 +134,7 @@ export class RestartManager {
 
     logger.warn("Restarting application...");
     await this.processManager.restart(this.runner, await this.startOptions());
+    this.errorGroups.clear();
   }
 
   private handleCrash(): void {
@@ -142,7 +151,7 @@ export class RestartManager {
 
   private reportFailure(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
-    const key = message.split("\n").find((line) => line.trim())?.trim() || "Unknown restart failure";
+    const key = message.trim() || "Unknown restart failure";
     const group = this.errorGroups.get(key) ?? 0;
     this.errorGroups.set(key, group + 1);
     this.recordFailure(key);
