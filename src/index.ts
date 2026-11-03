@@ -13,16 +13,74 @@ import { registerShutdown } from "./core/shutdown";
 import { FileWatcher } from "./core/watcher";
 import { getRunner, getSupportedExtensions } from "./runners";
 import { npmScriptRunner } from "./runners/npm-script";
-import type { ReloadConfig } from "./types";
+import type { ProjectConfig, ReloadConfig, RunnerDefinition, ServiceConfig, WatchRule, WatchRuleAction } from "./types";
 import { logger } from "./utils/logger";
+import { WatchPolicyDispatcher } from "./core/watch-policy";
+import { WorkspaceRunner, type WorkspaceServiceRuntime } from "./core/workspace-runner";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function loadConfig(cwd: string): ReloadConfig {
+function parseWatchRules(value: unknown): WatchRule[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error("Invalid configuration: watchRules must be an array");
+
+  return value.map((item, index) => {
+    if (!isRecord(item) || typeof item.pattern !== "string" || !item.pattern) {
+      throw new Error(`Invalid configuration: watchRules[${index}] requires a pattern`);
+    }
+    const actions: WatchRuleAction[] = ["ignore", "restart", "preview-reload", "command"];
+    if (!actions.includes(item.action as WatchRuleAction)) {
+      throw new Error(`Invalid configuration: watchRules[${index}].action is unsupported`);
+    }
+    if (item.action === "command" && (typeof item.command !== "string" || !item.command)) {
+      throw new Error(`Invalid configuration: watchRules[${index}] command action requires a command`);
+    }
+    if (item.args !== undefined && (!Array.isArray(item.args) || !item.args.every((arg) => typeof arg === "string"))) {
+      throw new Error(`Invalid configuration: watchRules[${index}].args must be an array of strings`);
+    }
+    if (item.cwd !== undefined && typeof item.cwd !== "string") {
+      throw new Error(`Invalid configuration: watchRules[${index}].cwd must be a string`);
+    }
+    if (item.shell !== undefined && typeof item.shell !== "boolean") {
+      throw new Error(`Invalid configuration: watchRules[${index}].shell must be a boolean`);
+    }
+    return item as unknown as WatchRule;
+  });
+}
+
+function parseServices(value: unknown): Record<string, ServiceConfig> | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error("Invalid configuration: services must be an object");
+
+  return Object.fromEntries(Object.entries(value).map(([name, item]) => {
+    if (!name || !isRecord(item)) throw new Error(`Invalid configuration: service ${name || "<empty>"} must be an object`);
+    const launchFields = ["entry", "script", "command"].filter((key) => typeof item[key] === "string" && item[key]);
+    if (launchFields.length !== 1) {
+      throw new Error(`Invalid configuration: service ${name} requires exactly one of entry, script, or command`);
+    }
+    for (const key of ["watch", "dependsOn", "args"] as const) {
+      if (item[key] !== undefined && (!Array.isArray(item[key]) || !item[key].every((part) => typeof part === "string"))) {
+        throw new Error(`Invalid configuration: service ${name}.${key} must be an array of strings`);
+      }
+    }
+    if (item.cwd !== undefined && typeof item.cwd !== "string") {
+      throw new Error(`Invalid configuration: service ${name}.cwd must be a string`);
+    }
+    if (item.shell !== undefined && typeof item.shell !== "boolean") {
+      throw new Error(`Invalid configuration: service ${name}.shell must be a boolean`);
+    }
+    if (item.env !== undefined && (!isRecord(item.env) || Object.values(item.env).some((entry) => entry !== undefined && typeof entry !== "string"))) {
+      throw new Error(`Invalid configuration: service ${name}.env must contain string values`);
+    }
+    return [name, item as unknown as ServiceConfig];
+  }));
+}
+
+function loadConfig(cwd: string): ProjectConfig {
   const configPath = path.join(cwd, "hypre.config.json");
-  if (!fs.existsSync(configPath)) return { ...defaultConfig, proxy: { ...defaultConfig.proxy } };
+  if (!fs.existsSync(configPath)) return { ...defaultConfig, proxy: { ...defaultConfig.proxy }, watchRules: [] };
 
   let parsed: unknown;
   try {
@@ -33,6 +91,7 @@ function loadConfig(cwd: string): ReloadConfig {
   if (!isRecord(parsed)) throw new Error("Invalid configuration: expected a JSON object");
 
   const proxy = isRecord(parsed.proxy) ? parsed.proxy : {};
+  const services = parseServices(parsed.services);
   return {
     debounceMs: typeof parsed.debounceMs === "number" && Number.isFinite(parsed.debounceMs) && parsed.debounceMs >= 0
       ? parsed.debounceMs : defaultConfig.debounceMs,
@@ -55,7 +114,9 @@ function loadConfig(cwd: string): ReloadConfig {
         ? proxy.port : defaultConfig.proxy.port,
       readinessTimeoutMs: typeof proxy.readinessTimeoutMs === "number" && Number.isFinite(proxy.readinessTimeoutMs) && proxy.readinessTimeoutMs > 0
         ? proxy.readinessTimeoutMs : defaultConfig.proxy.readinessTimeoutMs
-    }
+    },
+    watchRules: parseWatchRules(parsed.watchRules),
+    ...(services ? { services } : {})
   };
 }
 
@@ -63,7 +124,8 @@ function printUsage(): void {
   console.log(`Usage:
   hypre <entry-file> [watch-directory]
   hypre run <npm-script> [watch-directory]
-  hypre restart
+  hypre dev
+  hypre restart [service]
   hypre status
   hypre init
   hypre --v
@@ -91,6 +153,15 @@ function formatDuration(milliseconds: number): string {
 
 async function printStatus(cwd: string): Promise<void> {
   const status = await requestStatus(cwd);
+  if (status.services) {
+    console.log("Workspace services:");
+    for (const [name, service] of Object.entries(status.services)) {
+      console.log(`  ${name}: ${service.active ? `running (PID ${service.pid ?? "-"}, ${formatDuration(service.uptimeMs ?? 0)})` : "stopped"}`);
+      console.log(`    Last restart: ${service.lastSuccessfulRestartAt ? new Date(service.lastSuccessfulRestartAt).toLocaleString() : "Never"}`);
+      console.log(`    Restart loop: ${service.restartLoopPaused ? "PAUSED" : "active"} (${service.restartFailures} recent failures)`);
+    }
+    return;
+  }
   console.log(`Process       : ${status.active ? "running" : "stopped"}`);
   console.log(`PID           : ${status.pid ?? "-"}`);
   console.log(`Uptime        : ${status.uptimeMs === null ? "-" : formatDuration(status.uptimeMs)}`);
@@ -104,6 +175,76 @@ function ensureNpmScript(cwd: string, scriptName: string): void {
   const packageJson = JSON.parse(fs.readFileSync(packagePath, "utf8")) as { scripts?: Record<string, unknown> };
   if (typeof packageJson.scripts?.[scriptName] !== "string") {
     throw new Error(`npm script not found: ${scriptName}`);
+  }
+}
+
+function createWorkspaceServices(cwd: string, config: ProjectConfig): WorkspaceServiceRuntime[] {
+  if (!config.services || Object.keys(config.services).length === 0) {
+    throw new Error('hypre dev requires a non-empty "services" object in hypre.config.json');
+  }
+  if (config.proxy.enabled) {
+    throw new Error("Workspace mode does not support the single-service proxy; configure service ports in each service instead");
+  }
+
+  const envFile = path.join(cwd, ".env");
+  return Object.entries(config.services).map(([name, service]) => {
+    const serviceCwd = path.resolve(cwd, service.cwd || ".");
+    if (!fs.existsSync(serviceCwd) || !fs.statSync(serviceCwd).isDirectory()) {
+      throw new Error(`Service ${name} working directory not found: ${serviceCwd}`);
+    }
+
+    let runner: RunnerDefinition;
+    if (service.entry) {
+      const entry = path.resolve(serviceCwd, service.entry);
+      if (!fs.existsSync(entry) || !fs.statSync(entry).isFile()) {
+        throw new Error(`Service ${name} entry file not found: ${entry}`);
+      }
+      runner = getRunner(entry, serviceCwd);
+    } else if (service.script) {
+      ensureNpmScript(serviceCwd, service.script);
+      runner = npmScriptRunner(service.script);
+    } else {
+      runner = {
+        command: service.command!,
+        args: service.args ?? [],
+        shell: service.shell,
+        env: service.env
+      };
+    }
+    if (service.env) {
+      runner = { ...runner, env: { ...runner.env, ...service.env } };
+    }
+
+    const relativeCwd = path.relative(cwd, serviceCwd).split(path.sep).join("/");
+    const watchPrefix = relativeCwd ? `${relativeCwd}/` : "";
+    const defaultWatch = [`${watchPrefix}**/*`];
+    const processManager = new ProcessManager(serviceCwd);
+    return {
+      name,
+      manager: new RestartManager(processManager, runner, config, envFile),
+      watch: service.watch ?? defaultWatch,
+      dependsOn: service.dependsOn ?? []
+    };
+  });
+}
+
+async function runWorkspace(cwd: string, config: ProjectConfig): Promise<void> {
+  const policies = new WatchPolicyDispatcher(cwd, config.watchRules, config.debounceMs, () => {});
+  const workspace = new WorkspaceRunner(cwd, config, createWorkspaceServices(cwd, config), policies);
+  const controlServer = new ControlServer(cwd, (service) => workspace.restartNow(service), () => workspace.getStatus());
+
+  registerShutdown(workspace, async () => {
+    await controlServer.stop();
+    await workspace.shutdown();
+  });
+
+  try {
+    await workspace.start();
+    await controlServer.start();
+  } catch (error) {
+    await controlServer.stop();
+    await workspace.shutdown();
+    throw error;
   }
 }
 
@@ -128,12 +269,16 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "restart") {
-    await requestRestart(cwd);
-    logger.success("Restart request completed");
+    await requestRestart(cwd, args[1]);
+    logger.success(args[1] ? `Restart request completed for ${args[1]}` : "Restart request completed");
     return;
   }
   if (command === "status") {
     await printStatus(cwd);
+    return;
+  }
+  if (command === "dev") {
+    await runWorkspace(cwd, loadConfig(cwd));
     return;
   }
   if (!command) {
@@ -167,7 +312,7 @@ async function main(): Promise<void> {
       throw new Error(`Entry file not found: ${entry}`);
     }
     isHtmlEntry = path.extname(entry).toLowerCase() === ".html";
-    if (!isHtmlEntry) runner = getRunner(entry);
+    if (!isHtmlEntry) runner = getRunner(entry, watchDir);
   }
 
   if (config.proxy.enabled && !runner) {
@@ -195,19 +340,33 @@ async function main(): Promise<void> {
     ...getSupportedExtensions(),
     ...(runScript ? [".json"] : [])
   ];
+  const policies = new WatchPolicyDispatcher(cwd, config.watchRules, config.debounceMs, () => previewServer?.reload());
   const watcher = new FileWatcher(
     watchDir,
     config,
-    () => previewServer ? previewServer.reload() : restartManager?.schedule(),
+    (file) => policies.dispatch(file, () => {
+      if (path.resolve(file) === envFile) {
+        restartManager?.schedule();
+      } else if (previewServer) {
+        previewServer.reload();
+      } else {
+        restartManager?.schedule();
+      }
+    }),
     previewServer ? [".html", ".css", ".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"] : watchedExtensions,
-    runner ? [envFile] : []
+    runner ? [envFile] : [],
+    Boolean(runner) || config.watchRules.length > 0
   );
   const controlServer = restartManager
-    ? new ControlServer(cwd, () => restartManager.restartNow(), () => restartManager.getStatus())
+    ? new ControlServer(cwd, (service) => {
+      if (service) throw new Error(`Unknown service: ${service}`);
+      return restartManager.restartNow();
+    }, () => restartManager.getStatus())
     : null;
 
   registerShutdown(watcher, async () => {
     await controlServer?.stop();
+    await policies.stop();
     await restartManager?.shutdown();
     await proxyServer?.stop();
     await previewServer?.stop();
@@ -221,6 +380,7 @@ async function main(): Promise<void> {
     await controlServer?.start();
   } catch (error) {
     await watcher.stop();
+    await policies.stop();
     await controlServer?.stop();
     await restartManager?.shutdown();
     await proxyServer?.stop();
