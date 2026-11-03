@@ -1,4 +1,5 @@
-import type { ReloadConfig, RunnerDefinition } from "../types";
+import type { EngineStatus, ReloadConfig, RunnerDefinition } from "../types";
+import { loadEnvFile } from "../utils/env";
 import { logger } from "../utils/logger";
 import { ProcessManager, type ProcessStartOptions } from "./process-manager";
 import { LiveProxyServer } from "./live-proxy";
@@ -17,8 +18,18 @@ export class RestartManager {
     private readonly processManager: ProcessManager,
     private readonly runner: RunnerDefinition,
     private readonly config: ReloadConfig,
+    private readonly envFile: string,
     private readonly proxy: LiveProxyServer | null = null
   ) {}
+
+  getStatus(): EngineStatus {
+    this.trimFailures();
+    return {
+      ...this.processManager.getStatus(),
+      restartLoopPaused: this.paused,
+      restartFailures: this.failures.length
+    };
+  }
 
   schedule(): void {
     if (this.shuttingDown) return;
@@ -66,15 +77,19 @@ export class RestartManager {
   }
 
   private async startOptions(): Promise<ProcessStartOptions> {
+    const env = await loadEnvFile(this.envFile);
+    for (const key of Object.keys(this.runner.env ?? {})) delete env[key];
+
     const options: ProcessStartOptions = {
       startupGraceMs: this.config.startupGraceMs,
-      shutdownTimeoutMs: this.config.shutdownTimeoutMs
+      shutdownTimeoutMs: this.config.shutdownTimeoutMs,
+      env
     };
 
     if (this.config.proxy.enabled) {
       if (!this.proxy) throw new Error("Proxy mode is enabled but the proxy server is unavailable");
       const port = await this.proxy.reserveCandidatePort();
-      options.env = { PORT: String(port) };
+      options.env = { ...options.env, PORT: String(port) };
       options.waitUntilReady = () => this.proxy!.waitUntilReady(port);
       options.onPromote = () => this.proxy!.promote(port);
     }
