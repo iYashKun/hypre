@@ -25,6 +25,7 @@ export interface ReloadConfig {
     enabled: boolean;
     port: number;
     readinessTimeoutMs: number;
+    healthPath: string;
   };
 }
 
