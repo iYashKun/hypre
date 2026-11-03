@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import type { EngineStatus } from "../types";
 
 interface ControlState {
   port: number;
@@ -14,7 +15,11 @@ export class ControlServer {
   private readonly token = randomBytes(24).toString("hex");
   private server: net.Server | null = null;
 
-  constructor(private readonly cwd: string, private readonly restart: () => Promise<void>) {
+  constructor(
+    private readonly cwd: string,
+    private readonly restart: () => Promise<void>,
+    private readonly getStatus: () => EngineStatus
+  ) {
     const key = createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 20);
     this.statePath = path.join(os.tmpdir(), `hypre-${key}.json`);
   }
@@ -69,8 +74,12 @@ export class ControlServer {
   private async handleRequest(socket: net.Socket, line: string): Promise<void> {
     try {
       const request = JSON.parse(line) as { token?: string; command?: string };
-      if (request.token !== this.token || request.command !== "restart") {
+      if (request.token !== this.token || !["restart", "status"].includes(request.command ?? "")) {
         socket.end(JSON.stringify({ ok: false, error: "Unauthorized or unsupported command" }) + "\n");
+        return;
+      }
+      if (request.command === "status") {
+        socket.end(JSON.stringify({ ok: true, status: this.getStatus() }) + "\n");
         return;
       }
       await this.restart();
@@ -84,7 +93,13 @@ export class ControlServer {
   }
 }
 
-export async function requestRestart(cwd: string): Promise<void> {
+interface ControlResponse {
+  ok?: boolean;
+  error?: string;
+  status?: EngineStatus;
+}
+
+async function requestControl(cwd: string, command: "restart" | "status"): Promise<ControlResponse> {
   const key = createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 20);
   const statePath = path.join(os.tmpdir(), `hypre-${key}.json`);
   let state: ControlState;
@@ -94,7 +109,7 @@ export async function requestRestart(cwd: string): Promise<void> {
     throw new Error("No running Hypre session found in this project");
   }
 
-  await new Promise<void>((resolve, reject) => {
+  return await new Promise<ControlResponse>((resolve, reject) => {
     const socket = net.createConnection({ port: state.port, host: "127.0.0.1" });
     let response = "";
     const timer = setTimeout(() => {
@@ -103,7 +118,7 @@ export async function requestRestart(cwd: string): Promise<void> {
     }, 5000);
 
     socket.once("connect", () => {
-      socket.write(`${JSON.stringify({ token: state.token, command: "restart" })}\n`);
+      socket.write(`${JSON.stringify({ token: state.token, command })}\n`);
     });
     socket.on("data", (chunk) => {
       response += chunk.toString();
@@ -112,9 +127,8 @@ export async function requestRestart(cwd: string): Promise<void> {
       clearTimeout(timer);
       socket.end();
       try {
-        const result = JSON.parse(response.slice(0, newline)) as { ok?: boolean; error?: string };
-        if (result.ok) resolve();
-        else reject(new Error(result.error || "Hypre restart failed"));
+        const result = JSON.parse(response.slice(0, newline)) as ControlResponse;
+        resolve(result);
       } catch (error) {
         reject(error);
       }
@@ -124,4 +138,15 @@ export async function requestRestart(cwd: string): Promise<void> {
       reject(new Error(`Could not connect to Hypre: ${error.message}`));
     });
   });
+}
+
+export async function requestRestart(cwd: string): Promise<void> {
+  const result = await requestControl(cwd, "restart");
+  if (!result.ok) throw new Error(result.error || "Hypre restart failed");
+}
+
+export async function requestStatus(cwd: string): Promise<EngineStatus> {
+  const result = await requestControl(cwd, "status");
+  if (!result.ok || !result.status) throw new Error(result.error || "Could not read Hypre status");
+  return result.status;
 }
