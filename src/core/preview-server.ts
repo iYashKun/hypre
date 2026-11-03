@@ -33,19 +33,29 @@ export class IPreviewServer {
   ) {}
 
   async start(): Promise<void> {
-    this.server = http.createServer((request, response) => {
-      void this.handleRequest(request.url || "/", response);
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      this.server!.once("error", reject);
-      this.server!.listen(this.port, "0.0.0.0", () => {
-        this.server!.off("error", reject);
-        resolve();
+    for (let port = this.port; port <= 65535; port += 1) {
+      const server = http.createServer((request, response) => {
+        void this.handleRequest(request.url || "/", response);
       });
-    });
 
-    logger.success(`HTML preview: http://localhost:${this.port}`);
+      this.server = server;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          server.once("error", reject);
+          server.listen(port, "0.0.0.0", () => {
+            server.off("error", reject);
+            resolve();
+          });
+        });
+        logger.success(`HTML preview: http://localhost:${port}`);
+        return;
+      } catch (error) {
+        this.server = null;
+        if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+      }
+    }
+
+    throw new Error(`No available preview port from ${this.port} through 65535`);
   }
 
   reload(): void {
