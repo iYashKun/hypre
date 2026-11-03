@@ -39,10 +39,12 @@ once and keep coding.
 
 ## Supported languages
 
-> **HTML (.html), Python (.py), JavaScript (.js), TypeScript (.ts, .tsx), Ruby (.rb), Go (.go), Rust (.rs), PHP (.php)**
+> **HTML (.html), C (.c), C++ (.cc, .cpp, .cxx, .c++), C# (.cs), Python (.py), JavaScript (.js), TypeScript (.ts, .tsx), Ruby (.rb), Go (.go), Rust (.rs), PHP (.php)**
 
 Install the relevant language runtime separately. Hypre does not bundle
-Python, Node.js, Ruby, Go, Rust or PHP.
+native C/C++ compilers, the .NET SDK, Python, Node.js, Ruby, Go, Rust or PHP.
+C and C++ use `CC`/`CXX` when set, otherwise `cc`/`c++`. C# entries must have
+an unambiguous `.csproj` in their directory tree.
 
 ## Installation
 
@@ -87,6 +89,9 @@ npx @yashkun/hypre app.py
 ``` bash
 hypre app.py
 hypre app.ts
+hypre app.c
+hypre app.cpp
+hypre src/Program.cs
 hypre main.go
 hypre src/main.rs
 hypre index.php
@@ -132,8 +137,8 @@ is busy, Hypre tries the next port (for example, `8889`, then `8890`).**
 For HTTP servers, enable `proxy` in `hypre.config.json` and have the app bind
 to the `PORT` environment variable. Hypre starts each replacement on a
 separate local port, waits for `/` to respond with a status below 500, switches
-proxy traffic and then gracefully stops the
-old process. The proxy listens on `proxy.port`. Without proxy mode, a server
+proxy traffic and then gracefully stops the old process. The proxy listens on
+`proxy.port`. Without proxy mode, a server
 that binds a fixed port may need a brief handoff during restart.
 
 ### Example output
@@ -175,6 +180,8 @@ Status      : ACTIVE
     "**/.git/**",
     "**/dist/**",
     "**/build/**",
+    "**/bin/**",
+    "**/obj/**",
     "**/target/**",
     "**/.next/**",
     "**/__pycache__/**",
@@ -183,6 +190,8 @@ Status      : ACTIVE
   ]
 }
 ```
+
+Configured `ignore` patterns are added to Hypre's built-in exclusions.
 
 `watchRules` is optional. Without it, every non-ignored file change in the
 watch scope restarts the program or matching workspace service. Add rules only
@@ -218,6 +227,8 @@ in its `cwd`, or `command` with optional `args`. `dependsOn` controls startup
 order; services stop in reverse order. `watch` contains project-root-relative
 glob patterns, so only matching services restart when a file changes.
 If omitted, each service watches every non-ignored file under its `cwd`.
+Set `readyUrl` on a service when dependents must wait for an HTTP response
+below status 500; `readinessTimeoutMs` controls the wait (default 10000 ms).
 
 ``` json
 {
@@ -225,6 +236,7 @@ If omitted, each service watches every non-ignored file under its `cwd`.
     "api": {
       "cwd": "apps/api",
       "script": "dev",
+      "readyUrl": "http://127.0.0.1:3000/health",
       "watch": ["apps/api/**/*"]
     },
     "frontend": {
@@ -244,8 +256,9 @@ If omitted, each service watches every non-ignored file under its `cwd`.
 }
 ```
 
-Each service supports `env`, `shell`, and a separate `cwd`. Root `.env`
-changes restart every configured service. `hypre status` reports PID, uptime,
+Each service supports `env` and a separate `cwd`; direct `command` services
+also support `args` and `shell`. Root `.env` changes restart every configured
+service. `hypre status` reports PID, uptime,
 last successful restart, and restart-loop state for each service. The existing
 top-level HTTP proxy is single-service only; configure service ports directly
 when running a workspace.
