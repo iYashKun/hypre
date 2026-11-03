@@ -26,7 +26,6 @@ export class LiveProxyServer {
   constructor(
     private readonly port: number,
     private readonly readinessTimeoutMs: number,
-    private readonly healthPath: string = "/",
     private readonly drainTimeoutMs: number = 5000
   ) {}
 
@@ -91,7 +90,7 @@ export class LiveProxyServer {
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
     }
 
-    throw new Error(`Readiness check timed out after ${this.readinessTimeoutMs}ms at ${this.healthPath} on port ${port}`);
+    throw new Error(`Readiness check timed out after ${this.readinessTimeoutMs}ms at / on port ${port}`);
   }
 
   async promote(port: number): Promise<void> {
@@ -202,7 +201,7 @@ export class LiveProxyServer {
   private async probe(port: number): Promise<string | null> {
     const hosts = ["127.0.0.1", "::1"];
     const results = await Promise.all(hosts.map((hostname) => new Promise<string | null>((resolve) => {
-      const request = http.get({ hostname, port, path: this.healthPath }, (response) => {
+      const request = http.get({ hostname, port, path: "/" }, (response) => {
         response.resume();
         resolve((response.statusCode ?? 500) < 500 ? hostname : null);
       });
