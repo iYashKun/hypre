@@ -4,6 +4,18 @@ export interface Stoppable {
   stop(): Promise<void>;
 }
 
+export async function runCleanupSteps(steps: Array<() => Promise<void>>): Promise<void> {
+  const errors: unknown[] = [];
+  for (const step of steps) {
+    try {
+      await step();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, "One or more shutdown steps failed");
+}
+
 export function registerShutdown(watcher: Stoppable, cleanup: () => Promise<void>): void {
   let shuttingDown = false;
 
@@ -14,9 +26,7 @@ export function registerShutdown(watcher: Stoppable, cleanup: () => Promise<void
     shuttingDown = true;
     logger.warn("Shutting down hypre...");
     try {
-      await watcher.stop();
-      await cleanup();
-
+      await runCleanupSteps([() => watcher.stop(), cleanup]);
       logger.success("hypre stopped.");
       process.exit(exitCode);
     } catch (error) {
