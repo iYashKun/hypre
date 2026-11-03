@@ -31,3 +31,12 @@ export interface EngineState {
   child: ChildProcess | null;
   shuttingDown: boolean;
 }
+
+export interface EngineStatus {
+  active: boolean;
+  pid: number | null;
+  uptimeMs: number | null;
+  lastSuccessfulRestartAt: string | null;
+  restartLoopPaused: boolean;
+  restartFailures: number;
+}
