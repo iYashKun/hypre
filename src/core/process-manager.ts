@@ -1,14 +1,18 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import treeKill from "tree-kill";
+import { randomUUID } from "node:crypto";
+import { rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import type { RunnerDefinition } from "../types";
 import { logger } from "../utils/logger";
+import { signalProcessTree } from "../utils/process";
 
 export interface ProcessStartOptions {
   startupGraceMs: number;
   shutdownTimeoutMs: number;
   env?: NodeJS.ProcessEnv;
-  waitUntilReady?: () => Promise<void>;
+  waitUntilReady?: (signal: AbortSignal) => Promise<void>;
   onPromote?: () => void | Promise<void>;
 }
 
@@ -20,6 +24,7 @@ interface ManagedProcess {
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   exitPromise: Promise<void>;
+  artifactPath: string | null;
 }
 
 export class ProcessManager {
@@ -33,10 +38,6 @@ export class ProcessManager {
 
   setCrashHandler(handler: () => void): void {
     this.crashHandler = handler;
-  }
-
-  getLastSuccessfulBuildAt(): Date | null {
-    return this.lastSuccessfulBuildAt;
   }
 
   hasActiveProcess(): boolean {
@@ -101,15 +102,29 @@ export class ProcessManager {
     runner: RunnerDefinition,
     options: ProcessStartOptions
   ): Promise<ManagedProcess> {
-    if (runner.build) await this.runBuild(runner.build);
+    const artifactPath = runner.build?.artifact
+      ? path.join(os.tmpdir(), `hypre-${randomUUID()}${process.platform === "win32" ? ".exe" : ""}`)
+      : null;
+    try {
+      if (runner.build) await this.runBuild(runner.build, artifactPath);
+    } catch (error) {
+      if (artifactPath) await rm(artifactPath, { force: true }).catch(() => {});
+      throw error;
+    }
     logger.build("Starting candidate process...");
-    logger.info(`Executing: ${runner.command} ${runner.args.join(" ")}`);
+    const command = artifactPath ? runner.command.replaceAll("{{artifact}}", artifactPath) : runner.command;
+    const args = artifactPath ? runner.args.map((arg) => arg.replaceAll("{{artifact}}", artifactPath)) : runner.args;
+    const shell = runner.shell ?? false;
+    const spawnCommand = shell ? [command, ...args].join(" ") : command;
+    const spawnArgs = shell ? [] : args;
+    logger.info(`Executing: ${command} ${args.join(" ")}`);
 
-    const child = spawn(runner.command, runner.args, {
+    const child = spawn(spawnCommand, spawnArgs, {
       cwd: runner.cwd ?? this.cwd,
       env: { ...process.env, ...runner.env, ...options.env },
       stdio: ["inherit", "pipe", "pipe"],
-      shell: runner.shell ?? false,
+      shell,
+      detached: process.platform !== "win32",
       windowsHide: true
     });
 
@@ -121,7 +136,8 @@ export class ProcessManager {
       startedAt: Date.now(),
       exitCode: null,
       signal: null,
-      exitPromise: new Promise<void>((resolve) => { resolveExit = resolve; })
+      exitPromise: new Promise<void>((resolve) => { resolveExit = resolve; }),
+      artifactPath
     };
     this.candidates.add(record);
 
@@ -143,6 +159,7 @@ export class ProcessManager {
       record.signal = signal;
       this.candidates.delete(record);
       resolveExit();
+      if (record.artifactPath) void rm(record.artifactPath, { force: true }).catch(() => {});
       if (this.active === record) {
         this.active = null;
         if (code !== 0 || signal !== null) this.crashHandler?.();
@@ -156,48 +173,60 @@ export class ProcessManager {
       });
     } catch (error) {
       this.candidates.delete(record);
+      if (artifactPath) await rm(artifactPath, { force: true }).catch(() => {});
       throw new Error(`Could not start ${runner.command}: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     logger.success(`Candidate started | PID: ${child.pid ?? "pending"}`);
 
+    const readinessController = new AbortController();
     try {
       if (options.waitUntilReady) {
         await Promise.race([
-          options.waitUntilReady(),
+          options.waitUntilReady(readinessController.signal),
           record.exitPromise.then(() => {
+            readinessController.abort();
             throw this.exitError(record);
           })
         ]);
       } else {
+        let startupTimer: NodeJS.Timeout;
         const earlyExit = await Promise.race([
-          new Promise<false>((resolve) => setTimeout(() => resolve(false), options.startupGraceMs)),
+          new Promise<false>((resolve) => {
+            startupTimer = setTimeout(() => resolve(false), options.startupGraceMs);
+          }),
           record.exitPromise.then(() => true)
         ]);
+        clearTimeout(startupTimer!);
 
         if (earlyExit && record.exitCode !== 0) throw this.exitError(record);
       }
 
       if (record.exited && record.exitCode !== 0) throw this.exitError(record);
+      readinessController.abort();
       this.candidates.delete(record);
       return record;
     } catch (error) {
+      readinessController.abort();
       await this.terminate(record, options.shutdownTimeoutMs);
       this.candidates.delete(record);
+      if (artifactPath) await rm(artifactPath, { force: true }).catch(() => {});
       throw error;
     }
   }
 
-  private async runBuild(build: NonNullable<RunnerDefinition["build"]>): Promise<void> {
-    logger.build("Compiling TypeScript...");
+  private async runBuild(build: NonNullable<RunnerDefinition["build"]>, artifactPath: string | null): Promise<void> {
+    logger.build("Building candidate...");
     const output: string[] = [];
+    const args = artifactPath ? build.args.map((arg) => arg.replaceAll("{{artifact}}", artifactPath)) : build.args;
 
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(build.command, build.args, {
-        cwd: this.cwd,
+      const child = spawn(build.command, args, {
+        cwd: build.cwd ?? this.cwd,
         env: process.env,
         stdio: ["ignore", "pipe", "pipe"],
         shell: false,
+        detached: process.platform !== "win32",
         windowsHide: true
       });
       this.buildChild = child;
@@ -221,18 +250,13 @@ export class ProcessManager {
   private async terminateChild(child: ChildProcess, timeoutMs: number): Promise<void> {
     if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
 
-    await new Promise<void>((resolve) => {
-      treeKill(child.pid!, "SIGTERM", (error) => {
-        if (error && child.exitCode === null && child.signalCode === null) logger.warn(`Graceful termination: ${error.message}`);
-        resolve();
-      });
+    await signalProcessTree(child.pid, "SIGTERM").catch((error: unknown) => {
+      if (child.exitCode === null && child.signalCode === null) logger.warn(`Graceful termination: ${error instanceof Error ? error.message : String(error)}`);
     });
     if (await this.waitForChildExit(child, timeoutMs)) return;
 
     logger.warn(`Process did not exit within ${timeoutMs}ms; forcing termination`);
-    await new Promise<void>((resolve) => {
-      treeKill(child.pid!, "SIGKILL", () => resolve());
-    });
+    await signalProcessTree(child.pid, "SIGKILL").catch(() => {});
     await this.waitForChildExit(child, 1000);
   }
 
@@ -272,19 +296,14 @@ export class ProcessManager {
   private async terminate(record: ManagedProcess, timeoutMs: number): Promise<void> {
     if (record.exited || !record.child.pid) return;
 
-    await new Promise<void>((resolve) => {
-      treeKill(record.child.pid!, "SIGTERM", (error) => {
-        if (error && !record.exited) logger.warn(`Graceful termination: ${error.message}`);
-        resolve();
-      });
+    await signalProcessTree(record.child.pid, "SIGTERM").catch((error: unknown) => {
+      if (!record.exited) logger.warn(`Graceful termination: ${error instanceof Error ? error.message : String(error)}`);
     });
 
     if (await this.waitForExit(record, timeoutMs)) return;
 
     logger.warn(`Process did not exit within ${timeoutMs}ms; forcing termination`);
-    await new Promise<void>((resolve) => {
-      treeKill(record.child.pid!, "SIGKILL", () => resolve());
-    });
+    await signalProcessTree(record.child.pid, "SIGKILL").catch(() => {});
     await this.waitForExit(record, 1000);
   }
 
