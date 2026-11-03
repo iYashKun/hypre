@@ -11,7 +11,8 @@ export const defaultConfig: ReloadConfig = {
   proxy: {
     enabled: false,
     port: 3000,
-    readinessTimeoutMs: 10000
+    readinessTimeoutMs: 10000,
+    healthPath: "/"
   },
   ignore: [
     "**/node_modules/**",
@@ -19,6 +20,7 @@ export const defaultConfig: ReloadConfig = {
     "**/dist/**",
     "**/build/**",
     "**/target/**",
+    "**/coverage/**",
     "**/__pycache__/**",
     "**/.next/**",
     "**/vendor/**"
