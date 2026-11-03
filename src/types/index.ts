@@ -1,5 +1,3 @@
-import type { ChildProcess } from "node:child_process";
-
 export interface RunnerDefinition {
   command: string;
   args: string[];
@@ -9,6 +7,8 @@ export interface RunnerDefinition {
   build?: {
     command: string;
     args: string[];
+    cwd?: string;
+    artifact?: boolean;
   };
 }
 
@@ -47,6 +47,8 @@ export interface ServiceConfig {
   cwd?: string;
   watch?: string[];
   dependsOn?: string[];
+  readyUrl?: string;
+  readinessTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
   shell?: boolean;
 }
@@ -54,11 +56,6 @@ export interface ServiceConfig {
 export interface ProjectConfig extends ReloadConfig {
   watchRules: WatchRule[];
   services?: Record<string, ServiceConfig>;
-}
-
-export interface EngineState {
-  child: ChildProcess | null;
-  shuttingDown: boolean;
 }
 
 export interface EngineStatus {
