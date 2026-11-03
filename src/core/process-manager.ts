@@ -9,7 +9,7 @@ export interface ProcessStartOptions {
   shutdownTimeoutMs: number;
   env?: NodeJS.ProcessEnv;
   waitUntilReady?: () => Promise<void>;
-  onPromote?: () => void;
+  onPromote?: () => void | Promise<void>;
 }
 
 interface ManagedProcess {
@@ -27,6 +27,7 @@ export class ProcessManager {
   private readonly candidates = new Set<ManagedProcess>();
   private crashHandler: (() => void) | null = null;
   private lastSuccessfulBuildAt: Date | null = null;
+  private buildChild: ChildProcess | null = null;
 
   constructor(private readonly cwd: string) {}
 
@@ -54,6 +55,7 @@ export class ProcessManager {
   }
 
   async stop(timeoutMs = 5000): Promise<void> {
+    if (this.buildChild) await this.terminateChild(this.buildChild, timeoutMs);
     const active = this.active;
     this.active = null;
     const stopping = new Set(this.candidates);
@@ -64,7 +66,7 @@ export class ProcessManager {
   async start(runner: RunnerDefinition, options: ProcessStartOptions): Promise<void> {
     const candidate = await this.launch(runner, options);
     this.active = candidate;
-    options.onPromote?.();
+    await options.onPromote?.();
     this.markSuccessful();
   }
 
@@ -73,7 +75,7 @@ export class ProcessManager {
     try {
       const candidate = await this.launch(runner, options);
       this.active = candidate;
-      options.onPromote?.();
+      await options.onPromote?.();
       this.markSuccessful();
 
       if (previous && previous !== candidate) {
@@ -86,7 +88,7 @@ export class ProcessManager {
         await this.terminate(previous, options.shutdownTimeoutMs);
         const candidate = await this.launch(runner, options);
         this.active = candidate;
-        options.onPromote?.();
+        await options.onPromote?.();
         this.markSuccessful();
         return;
       }
@@ -198,16 +200,55 @@ export class ProcessManager {
         shell: false,
         windowsHide: true
       });
+      this.buildChild = child;
       child.stdout?.on("data", (chunk: Buffer) => output.push(chunk.toString()));
       child.stderr?.on("data", (chunk: Buffer) => output.push(chunk.toString()));
-      child.once("error", (error) => reject(new Error(`Could not run TypeScript compiler: ${error.message}`)));
+      child.once("error", (error) => {
+        if (this.buildChild === child) this.buildChild = null;
+        reject(new Error(`Could not run TypeScript compiler: ${error.message}`));
+      });
       child.once("close", (code, signal) => {
+        if (this.buildChild === child) this.buildChild = null;
         if (code === 0) resolve();
         else {
           const diagnostics = output.join("").trim();
           reject(new Error(`TypeScript compilation failed | Code: ${code} | Signal: ${signal ?? "none"}${diagnostics ? `\n${diagnostics}` : ""}`));
         }
       });
+    });
+  }
+
+  private async terminateChild(child: ChildProcess, timeoutMs: number): Promise<void> {
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+
+    await new Promise<void>((resolve) => {
+      treeKill(child.pid!, "SIGTERM", (error) => {
+        if (error && child.exitCode === null && child.signalCode === null) logger.warn(`Graceful termination: ${error.message}`);
+        resolve();
+      });
+    });
+    if (await this.waitForChildExit(child, timeoutMs)) return;
+
+    logger.warn(`Process did not exit within ${timeoutMs}ms; forcing termination`);
+    await new Promise<void>((resolve) => {
+      treeKill(child.pid!, "SIGKILL", () => resolve());
+    });
+    await this.waitForChildExit(child, 1000);
+  }
+
+  private async waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+    if (child.exitCode !== null || child.signalCode !== null) return true;
+
+    return new Promise<boolean>((resolve) => {
+      const onClose = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        child.off("close", onClose);
+        resolve(false);
+      }, timeoutMs);
+      child.once("close", onClose);
     });
   }
 
