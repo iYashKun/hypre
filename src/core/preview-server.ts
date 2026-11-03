@@ -45,7 +45,7 @@ export class IPreviewServer {
       try {
         await new Promise<void>((resolve, reject) => {
           server.once("error", reject);
-          server.listen(port, "0.0.0.0", () => {
+          server.listen(port, "127.0.0.1", () => {
             server.off("error", reject);
             resolve();
           });
@@ -78,11 +78,28 @@ export class IPreviewServer {
   }
 
   private async handleRequest(url: string, response: ServerResponse): Promise<void> {
+    const host = response.req.headers.host;
+    try {
+      const hostname = new URL(`http://${host}`).hostname.toLowerCase();
+      if (!["localhost", "127.0.0.1", "[::1]", "::1"].includes(hostname)) {
+        response.writeHead(403).end("Forbidden");
+        return;
+      }
+    } catch {
+      response.writeHead(400).end("Bad request");
+      return;
+    }
+
     let pathname: string;
     try {
       pathname = decodeURIComponent(new URL(url, "http://localhost").pathname);
     } catch {
       response.writeHead(400).end("Bad request");
+      return;
+    }
+
+    if (pathname.split("/").some((part) => part.startsWith("."))) {
+      response.writeHead(403).end("Forbidden");
       return;
     }
 
@@ -126,7 +143,12 @@ export class IPreviewServer {
         return;
       }
 
-      const contentType = contentTypes[path.extname(resolvedPath).toLowerCase()] || "application/octet-stream";
+      const extension = path.extname(resolvedPath).toLowerCase();
+      const contentType = contentTypes[extension];
+      if (!contentType) {
+        response.writeHead(403).end("Forbidden");
+        return;
+      }
       response.setHeader("Content-Type", contentType);
       if (contentType.startsWith("text/html")) {
         const html = await readFile(resolvedPath, "utf8");
