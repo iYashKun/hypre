@@ -14,7 +14,8 @@ export class FileWatcher {
     private readonly config: ReloadConfig,
     private readonly onChange: (file: string) => void,
     private readonly extensions: string[] = getSupportedExtensions(),
-    private readonly additionalFiles: string[] = []
+    private readonly additionalFiles: string[] = [],
+    private readonly watchAllFiles = false
   ) {}
 
   async start(): Promise<void> {
@@ -27,6 +28,7 @@ export class FileWatcher {
     });
 
     this.watcher.on("all", (event, file) => {
+      if (event === "addDir" || event === "unlinkDir") return;
       const absoluteFile = path.resolve(file);
       const absoluteDirectory = path.resolve(this.directory);
       const relativeFile = path.relative(absoluteDirectory, absoluteFile);
@@ -34,7 +36,7 @@ export class FileWatcher {
       const isAdditionalFile = this.additionalFiles.includes(absoluteFile);
       const extension = getExtension(file);
 
-      if ((!isInDirectory || !this.extensions.includes(extension)) && !isAdditionalFile) return;
+      if ((!isInDirectory || (!this.watchAllFiles && !this.extensions.includes(extension))) && !isAdditionalFile) return;
       logger.change(`${event}: ${file}`);
       this.onChange(file);
     });
