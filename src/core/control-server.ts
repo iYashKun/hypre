@@ -22,6 +22,43 @@ function isProcessRunning(pid: number): boolean {
   }
 }
 
+function isControlServerAt(port: unknown, token: unknown): Promise<boolean> {
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535 || typeof token !== "string") {
+    return Promise.resolve(false);
+  }
+
+  return new Promise<boolean>((resolve) => {
+    const socket = net.createConnection({ port, host: "127.0.0.1" });
+    const challenge = randomBytes(24).toString("hex");
+    let response = "";
+    let settled = false;
+    const finish = (matches: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(matches);
+    };
+    const timer = setTimeout(() => finish(false), 500);
+    socket.setTimeout(500, () => finish(false));
+    socket.once("connect", () => socket.write(`${JSON.stringify({ challenge })}\n`));
+    socket.on("data", (chunk) => {
+      response += chunk.toString();
+      const newline = response.indexOf("\n");
+      if (newline < 0) return;
+      try {
+        const proof = (JSON.parse(response.slice(0, newline)) as { proof?: unknown }).proof;
+        const expected = Buffer.from(createHmac("sha256", token).update(challenge).digest("hex"), "hex");
+        const provided = typeof proof === "string" ? Buffer.from(proof, "hex") : Buffer.alloc(0);
+        finish(provided.length === expected.length && timingSafeEqual(provided, expected));
+      } catch {
+        finish(false);
+      }
+    });
+    socket.once("error", () => finish(false));
+  });
+}
+
 function getStatePath(cwd: string): string {
   const key = createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 20);
   return path.join(os.homedir(), ".hypre", `hypre-${key}.json`);
@@ -183,11 +220,13 @@ export class ControlServer {
     } catch {
       // An unreadable state file is stale if its owner process is not running.
     }
-    if (typeof existing.pid === "number" && isProcessRunning(existing.pid)) {
+    if (await isControlServerAt(existing.port, existing.token)) {
       throw new Error("A Hypre session is already running for this project");
     }
 
-    await fs.unlink(this.statePath);
+    await fs.unlink(this.statePath).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    });
     try {
       await create();
     } catch (error) {
