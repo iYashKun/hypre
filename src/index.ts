@@ -5,11 +5,11 @@ import path from "node:path";
 
 import { defaultConfig } from "./config/default";
 import { ControlServer, requestRestart, requestStatus } from "./core/control-server";
-import { IPreviewServer } from "./core/preview-server";
+import { PreviewServer } from "./core/preview-server";
 import { ProcessManager } from "./core/process-manager";
 import { LiveProxyServer } from "./core/live-proxy";
 import { RestartManager } from "./core/restart-manager";
-import { registerShutdown } from "./core/shutdown";
+import { registerShutdown, runCleanupSteps } from "./core/shutdown";
 import { FileWatcher } from "./core/watcher";
 import { getRunner, getSupportedExtensions } from "./runners";
 import { npmScriptRunner } from "./runners/npm-script";
@@ -20,6 +20,23 @@ import { WorkspaceRunner, type WorkspaceServiceRuntime } from "./core/workspace-
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validateNumberField(
+  record: Record<string, unknown>,
+  name: string,
+  isValid: (value: number) => boolean
+): void {
+  const value = record[name];
+  if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value) || !isValid(value))) {
+    throw new Error(`Invalid configuration: ${name} has an invalid value`);
+  }
+}
+
+function validateBooleanField(record: Record<string, unknown>, name: string): void {
+  if (record[name] !== undefined && typeof record[name] !== "boolean") {
+    throw new Error(`Invalid configuration: ${name} must be a boolean`);
+  }
 }
 
 function parseWatchRules(value: unknown): WatchRule[] {
@@ -56,6 +73,11 @@ function parseServices(value: unknown): Record<string, ServiceConfig> | undefine
 
   return Object.fromEntries(Object.entries(value).map(([name, item]) => {
     if (!name || !isRecord(item)) throw new Error(`Invalid configuration: service ${name || "<empty>"} must be an object`);
+    for (const key of ["entry", "script", "command"] as const) {
+      if (item[key] !== undefined && (typeof item[key] !== "string" || !item[key])) {
+        throw new Error(`Invalid configuration: service ${name}.${key} must be a non-empty string`);
+      }
+    }
     const launchFields = ["entry", "script", "command"].filter((key) => typeof item[key] === "string" && item[key]);
     if (launchFields.length !== 1) {
       throw new Error(`Invalid configuration: service ${name} requires exactly one of entry, script, or command`);
@@ -70,6 +92,27 @@ function parseServices(value: unknown): Record<string, ServiceConfig> | undefine
     }
     if (item.shell !== undefined && typeof item.shell !== "boolean") {
       throw new Error(`Invalid configuration: service ${name}.shell must be a boolean`);
+    }
+    if (item.shell !== undefined && !item.command) {
+      throw new Error(`Invalid configuration: service ${name}.shell is only supported with command`);
+    }
+    if (item.readyUrl !== undefined) {
+      if (typeof item.readyUrl !== "string") throw new Error(`Invalid configuration: service ${name}.readyUrl must be a URL`);
+      let readyUrl: URL;
+      try {
+        readyUrl = new URL(item.readyUrl);
+      } catch {
+        throw new Error(`Invalid configuration: service ${name}.readyUrl must be an HTTP URL`);
+      }
+      if (!["http:", "https:"].includes(readyUrl.protocol)) {
+        throw new Error(`Invalid configuration: service ${name}.readyUrl must be an HTTP URL`);
+      }
+    }
+    if (item.readinessTimeoutMs !== undefined && (typeof item.readinessTimeoutMs !== "number" || !Number.isFinite(item.readinessTimeoutMs) || item.readinessTimeoutMs <= 0)) {
+      throw new Error(`Invalid configuration: service ${name}.readinessTimeoutMs must be a positive number`);
+    }
+    if (item.readinessTimeoutMs !== undefined && item.readyUrl === undefined) {
+      throw new Error(`Invalid configuration: service ${name}.readinessTimeoutMs requires readyUrl`);
     }
     if (item.env !== undefined && (!isRecord(item.env) || Object.values(item.env).some((entry) => entry !== undefined && typeof entry !== "string"))) {
       throw new Error(`Invalid configuration: service ${name}.env must contain string values`);
@@ -90,13 +133,28 @@ function loadConfig(cwd: string): ProjectConfig {
   }
   if (!isRecord(parsed)) throw new Error("Invalid configuration: expected a JSON object");
 
-  const proxy = isRecord(parsed.proxy) ? parsed.proxy : {};
+  validateNumberField(parsed, "debounceMs", (value) => value >= 0);
+  validateNumberField(parsed, "previewPort", (value) => Number.isInteger(value) && value > 0 && value <= 65535);
+  validateNumberField(parsed, "startupGraceMs", (value) => value >= 0);
+  validateNumberField(parsed, "shutdownTimeoutMs", (value) => value >= 0);
+  validateNumberField(parsed, "restartLoopLimit", (value) => Number.isInteger(value) && value > 0);
+  validateNumberField(parsed, "restartLoopWindowMs", (value) => value > 0);
+  validateBooleanField(parsed, "restartOnCrash");
+  if (parsed.ignore !== undefined && (!Array.isArray(parsed.ignore) || !parsed.ignore.every((item) => typeof item === "string"))) {
+    throw new Error("Invalid configuration: ignore must be an array of strings");
+  }
+  if (parsed.proxy !== undefined && !isRecord(parsed.proxy)) {
+    throw new Error("Invalid configuration: proxy must be an object");
+  }
+  const proxy = (parsed.proxy ?? {}) as Record<string, unknown>;
+  validateBooleanField(proxy, "enabled");
+  validateNumberField(proxy, "port", (value) => Number.isInteger(value) && value > 0 && value <= 65535);
+  validateNumberField(proxy, "readinessTimeoutMs", (value) => value > 0);
   const services = parseServices(parsed.services);
   return {
     debounceMs: typeof parsed.debounceMs === "number" && Number.isFinite(parsed.debounceMs) && parsed.debounceMs >= 0
       ? parsed.debounceMs : defaultConfig.debounceMs,
-    ignore: Array.isArray(parsed.ignore) && parsed.ignore.every((item) => typeof item === "string")
-      ? parsed.ignore as string[] : [...defaultConfig.ignore],
+    ignore: [...new Set([...defaultConfig.ignore, ...(parsed.ignore as string[] | undefined ?? [])])],
     previewPort: typeof parsed.previewPort === "number" && Number.isInteger(parsed.previewPort) && parsed.previewPort > 0 && parsed.previewPort <= 65535
       ? parsed.previewPort : defaultConfig.previewPort,
     startupGraceMs: typeof parsed.startupGraceMs === "number" && Number.isFinite(parsed.startupGraceMs) && parsed.startupGraceMs >= 0
@@ -176,6 +234,9 @@ function ensureNpmScript(cwd: string, scriptName: string): void {
   if (typeof packageJson.scripts?.[scriptName] !== "string") {
     throw new Error(`npm script not found: ${scriptName}`);
   }
+  if (process.platform === "win32" && !/^[A-Za-z0-9:_-]+$/.test(scriptName)) {
+    throw new Error("On Windows, npm script names may contain only letters, numbers, colon, underscore, and hyphen");
+  }
 }
 
 function createWorkspaceServices(cwd: string, config: ProjectConfig): WorkspaceServiceRuntime[] {
@@ -221,7 +282,7 @@ function createWorkspaceServices(cwd: string, config: ProjectConfig): WorkspaceS
     const processManager = new ProcessManager(serviceCwd);
     return {
       name,
-      manager: new RestartManager(processManager, runner, config, envFile),
+      manager: new RestartManager(processManager, runner, config, envFile, null, service.readyUrl, service.readinessTimeoutMs),
       watch: service.watch ?? defaultWatch,
       dependsOn: service.dependsOn ?? []
     };
@@ -234,16 +295,24 @@ async function runWorkspace(cwd: string, config: ProjectConfig): Promise<void> {
   const controlServer = new ControlServer(cwd, (service) => workspace.restartNow(service), () => workspace.getStatus());
 
   registerShutdown(workspace, async () => {
-    await controlServer.stop();
-    await workspace.shutdown();
+    await runCleanupSteps([
+      () => controlServer.stop(),
+      () => workspace.shutdown()
+    ]);
   });
 
   try {
     await workspace.start();
     await controlServer.start();
   } catch (error) {
-    await controlServer.stop();
-    await workspace.shutdown();
+    try {
+      await runCleanupSteps([
+        () => controlServer.stop(),
+        () => workspace.shutdown()
+      ]);
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Workspace startup and cleanup failed");
+    }
     throw error;
   }
 }
@@ -334,7 +403,7 @@ async function main(): Promise<void> {
     ? new RestartManager(processManager, runner, config, envFile, proxyServer)
     : null;
   const previewServer = isHtmlEntry
-    ? new IPreviewServer(path.dirname(entry), path.basename(entry), config.previewPort)
+    ? new PreviewServer(path.dirname(entry), path.basename(entry), config.previewPort)
     : null;
   const watchedExtensions = [
     ...getSupportedExtensions(),
@@ -354,7 +423,7 @@ async function main(): Promise<void> {
       }
     }),
     previewServer ? [".html", ".css", ".js", ".mjs", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"] : watchedExtensions,
-    runner ? [envFile] : [],
+    runner ? [envFile, ...(runScript ? [path.join(cwd, "package.json")] : [])] : [],
     Boolean(runner) || config.watchRules.length > 0
   );
   const controlServer = restartManager
@@ -365,11 +434,13 @@ async function main(): Promise<void> {
     : null;
 
   registerShutdown(watcher, async () => {
-    await controlServer?.stop();
-    await policies.stop();
-    await restartManager?.shutdown();
-    await proxyServer?.stop();
-    await previewServer?.stop();
+    await runCleanupSteps([
+      () => controlServer?.stop() ?? Promise.resolve(),
+      () => policies.stop(),
+      () => restartManager?.shutdown() ?? Promise.resolve(),
+      () => proxyServer?.stop() ?? Promise.resolve(),
+      () => previewServer?.stop() ?? Promise.resolve()
+    ]);
   });
 
   try {
@@ -379,12 +450,18 @@ async function main(): Promise<void> {
     await restartManager?.start();
     await controlServer?.start();
   } catch (error) {
-    await watcher.stop();
-    await policies.stop();
-    await controlServer?.stop();
-    await restartManager?.shutdown();
-    await proxyServer?.stop();
-    await previewServer?.stop();
+    try {
+      await runCleanupSteps([
+        () => watcher.stop(),
+        () => policies.stop(),
+        () => controlServer?.stop() ?? Promise.resolve(),
+        () => restartManager?.shutdown() ?? Promise.resolve(),
+        () => proxyServer?.stop() ?? Promise.resolve(),
+        () => previewServer?.stop() ?? Promise.resolve()
+      ]);
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Startup and cleanup failed");
+    }
     throw error;
   }
 }
