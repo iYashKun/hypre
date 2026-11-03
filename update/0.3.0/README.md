@@ -1,5 +1,3 @@
-## 0.3.0
-
 ### Added
 
 - Load project root `.env` values into launched programs and custom watch commands. Shell variables take precedence and changes to `.env` restart the program or all workspace services.
