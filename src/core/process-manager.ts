@@ -16,6 +16,7 @@ interface ManagedProcess {
   child: ChildProcess;
   stderr: string;
   exited: boolean;
+  startedAt: number;
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   exitPromise: Promise<void>;
@@ -39,6 +40,17 @@ export class ProcessManager {
 
   hasActiveProcess(): boolean {
     return this.active !== null && !this.active.exited;
+  }
+
+  getStatus(): { active: boolean; pid: number | null; uptimeMs: number | null; lastSuccessfulRestartAt: string | null } {
+    const active = this.active;
+    const isActive = active !== null && !active.exited;
+    return {
+      active: isActive,
+      pid: isActive ? active.child.pid ?? null : null,
+      uptimeMs: isActive ? Date.now() - active.startedAt : null,
+      lastSuccessfulRestartAt: this.lastSuccessfulBuildAt?.toISOString() ?? null
+    };
   }
 
   async stop(timeoutMs = 5000): Promise<void> {
@@ -104,6 +116,7 @@ export class ProcessManager {
       child,
       stderr: "",
       exited: false,
+      startedAt: Date.now(),
       exitCode: null,
       signal: null,
       exitPromise: new Promise<void>((resolve) => { resolveExit = resolve; })
