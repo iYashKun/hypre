@@ -2,7 +2,7 @@
 
 - Add C (`.c`), C++ (`.cc`, `.cpp`, `.cxx`, `.c++`) and C# (`.cs`) runners. C and C++ compile to isolated temporary executables; C# runs through the nearest unambiguous `.csproj`.
 - Add optional workspace `readyUrl` and `readinessTimeoutMs` settings so dependent services can wait for HTTP readiness. Responses below status 500 count as ready.
-- Add `npm checks` with regression coverage for preview and proxy security, control server shutdown/authentication, readiness cancellation, TypeScript fallback and C/C++/C# execution.
+- Add `npm test` with regression coverage for preview and proxy security, control server shutdown/authentication, readiness cancellation, TypeScript fallback and C/C++/C# execution.
 
 ### Fixed
 
@@ -24,4 +24,4 @@
 
 ### Verification
 
-- `npm ci` and `npm checks` pass; all 11 tests pass.
+- `npm ci` and `npm test` pass; all 11 tests pass.
