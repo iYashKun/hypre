@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/license-MIT-green" />
   <img src="https://img.shields.io/github/created-at/iYashKun/hypre?label=created%20at&labelColor=black&color=7C3AED" />
   <img src="https://img.shields.io/github/last-commit/iYashKun/hypre?style=flat&logo=git&color=F05032&logoColor=white" />
+  <img src="https://img.shields.io/npm/d18m/%40yashkun%2Fhypre?label=Downloads&colour=blue" />
 </p>
 
 ------------------------------------------------------------------------
