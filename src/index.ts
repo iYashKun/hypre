@@ -113,7 +113,9 @@ function loadConfig(cwd: string): ProjectConfig {
       port: typeof proxy.port === "number" && Number.isInteger(proxy.port) && proxy.port > 0 && proxy.port <= 65535
         ? proxy.port : defaultConfig.proxy.port,
       readinessTimeoutMs: typeof proxy.readinessTimeoutMs === "number" && Number.isFinite(proxy.readinessTimeoutMs) && proxy.readinessTimeoutMs > 0
-        ? proxy.readinessTimeoutMs : defaultConfig.proxy.readinessTimeoutMs
+        ? proxy.readinessTimeoutMs : defaultConfig.proxy.readinessTimeoutMs,
+      healthPath: typeof proxy.healthPath === "string" && proxy.healthPath.startsWith("/")
+        ? proxy.healthPath : defaultConfig.proxy.healthPath
     },
     watchRules: parseWatchRules(parsed.watchRules),
     ...(services ? { services } : {})
@@ -328,7 +330,7 @@ async function main(): Promise<void> {
   const processManager = runner ? new ProcessManager(processCwd) : null;
   const envFile = path.join(cwd, ".env");
   const proxyServer = runner && config.proxy.enabled
-    ? new LiveProxyServer(config.proxy.port, config.proxy.readinessTimeoutMs)
+    ? new LiveProxyServer(config.proxy.port, config.proxy.readinessTimeoutMs, config.proxy.healthPath, config.shutdownTimeoutMs)
     : null;
   const restartManager = processManager && runner
     ? new RestartManager(processManager, runner, config, envFile, proxyServer)
