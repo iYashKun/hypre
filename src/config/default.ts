@@ -18,6 +18,8 @@ export const defaultConfig: ReloadConfig = {
     "**/.git/**",
     "**/dist/**",
     "**/build/**",
+    "**/bin/**",
+    "**/obj/**",
     "**/target/**",
     "**/coverage/**",
     "**/__pycache__/**",
