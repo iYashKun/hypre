@@ -17,7 +17,7 @@ export class ControlServer {
 
   constructor(
     private readonly cwd: string,
-    private readonly restart: () => Promise<void>,
+    private readonly restart: (service?: string) => Promise<void>,
     private readonly getStatus: () => EngineStatus
   ) {
     const key = createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 20);
@@ -73,7 +73,7 @@ export class ControlServer {
 
   private async handleRequest(socket: net.Socket, line: string): Promise<void> {
     try {
-      const request = JSON.parse(line) as { token?: string; command?: string };
+      const request = JSON.parse(line) as { token?: string; command?: string; service?: string };
       if (request.token !== this.token || !["restart", "status"].includes(request.command ?? "")) {
         socket.end(JSON.stringify({ ok: false, error: "Unauthorized or unsupported command" }) + "\n");
         return;
@@ -82,7 +82,11 @@ export class ControlServer {
         socket.end(JSON.stringify({ ok: true, status: this.getStatus() }) + "\n");
         return;
       }
-      await this.restart();
+      if (request.service !== undefined && typeof request.service !== "string") {
+        socket.end(JSON.stringify({ ok: false, error: "Invalid service name" }) + "\n");
+        return;
+      }
+      await this.restart(request.service);
       socket.end(JSON.stringify({ ok: true }) + "\n");
     } catch (error) {
       socket.end(JSON.stringify({
@@ -99,7 +103,7 @@ interface ControlResponse {
   status?: EngineStatus;
 }
 
-async function requestControl(cwd: string, command: "restart" | "status"): Promise<ControlResponse> {
+async function requestControl(cwd: string, command: "restart" | "status", service?: string): Promise<ControlResponse> {
   const key = createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 20);
   const statePath = path.join(os.tmpdir(), `hypre-${key}.json`);
   let state: ControlState;
@@ -118,7 +122,7 @@ async function requestControl(cwd: string, command: "restart" | "status"): Promi
     }, 5000);
 
     socket.once("connect", () => {
-      socket.write(`${JSON.stringify({ token: state.token, command })}\n`);
+      socket.write(`${JSON.stringify({ token: state.token, command, ...(service ? { service } : {}) })}\n`);
     });
     socket.on("data", (chunk) => {
       response += chunk.toString();
@@ -140,8 +144,8 @@ async function requestControl(cwd: string, command: "restart" | "status"): Promi
   });
 }
 
-export async function requestRestart(cwd: string): Promise<void> {
-  const result = await requestControl(cwd, "restart");
+export async function requestRestart(cwd: string, service?: string): Promise<void> {
+  const result = await requestControl(cwd, "restart", service);
   if (!result.ok) throw new Error(result.error || "Hypre restart failed");
 }
 
