@@ -11,6 +11,9 @@ const { ControlServer } = require("../dist/core/control-server.js");
 const { ProcessManager } = require("../dist/core/process-manager.js");
 const { runCleanupSteps } = require("../dist/core/shutdown.js");
 const { waitForHttpReady } = require("../dist/utils/readiness.js");
+const { loadConfig } = require("../dist/index.js");
+const { defaultConfig } = require("../dist/config/default.js");
+const picomatch = require("picomatch");
 
 function emptyStatus() {
   return {
@@ -87,6 +90,29 @@ test("control server handles one request and closes idle clients on stop", async
   }
 });
 
+test("control startup replaces stale state even when its PID is reused", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "hypre-stale-control-test-"));
+  const key = createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 20);
+  const stateDirectory = path.join(os.homedir(), ".hypre");
+  const statePath = path.join(stateDirectory, `hypre-${key}.json`);
+  const probe = net.createServer();
+  await fs.mkdir(stateDirectory, { recursive: true, mode: 0o700 });
+  await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
+  const unusedPort = probe.address().port;
+  await new Promise((resolve) => probe.close(resolve));
+  await fs.writeFile(statePath, JSON.stringify({ port: unusedPort, token: "stale-token", pid: process.pid }), { mode: 0o600 });
+
+  const server = new ControlServer(cwd, async () => {}, emptyStatus);
+  try {
+    await server.start();
+    const state = JSON.parse(await fs.readFile(statePath, "utf8"));
+    assert.notEqual(state.token, "stale-token");
+  } finally {
+    await server.stop();
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("cleanup attempts every step after a failure", async () => {
   let secondStepRan = false;
   await assert.rejects(runCleanupSteps([
@@ -94,6 +120,23 @@ test("cleanup attempts every step after a failure", async () => {
     async () => { secondStepRan = true; }
   ]), AggregateError);
   assert.equal(secondStepRan, true);
+});
+
+test("configured ignore patterns replace the built-in list", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "hypre-config-test-"));
+  try {
+    await fs.writeFile(path.join(cwd, "hypre.config.json"), JSON.stringify({ ignore: ["custom/**"] }));
+    assert.deepEqual(loadConfig(cwd).ignore, ["custom/**"]);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("default ignores .NET outputs without ignoring Rust src/bin sources", () => {
+  const isIgnored = (file) => defaultConfig.ignore.some((pattern) => picomatch(pattern, { dot: true })(file));
+  assert.equal(isIgnored("apps/api/bin/Debug/net8.0/api.dll"), true);
+  assert.equal(isIgnored("apps/api/bin/Release/net8.0/api.dll"), true);
+  assert.equal(isIgnored("apps/worker/src/bin/main.rs"), false);
 });
 
 test("workspace readiness accepts an API root that returns 404", async () => {
@@ -140,4 +183,17 @@ test("ProcessManager stop terminates a running child process", async () => {
   assert.ok(manager.getStatus().pid);
   await manager.stop(1000);
   assert.equal(manager.getStatus().active, false);
+});
+
+test("runner exit is detected when a descendant keeps stdio open", async () => {
+  const manager = new ProcessManager(process.cwd());
+  const source = 'const { spawn } = require("node:child_process"); spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "inherit" }); process.exit(1);';
+  const startedAt = Date.now();
+  await assert.rejects(manager.start({
+    command: process.execPath,
+    args: ["-e", source]
+  }, { startupGraceMs: 5000, shutdownTimeoutMs: 1000 }));
+  assert.ok(Date.now() - startedAt < 1500);
+  assert.equal(manager.getStatus().active, false);
+  await manager.stop(1000);
 });
