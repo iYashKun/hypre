@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-const hypreVersion = "0.3.0"
+const hypreVersion = "0.3.4"
 
 func run() int {
 	args := append(
