@@ -49,8 +49,17 @@ export class FileWatcher {
     this.watcher.on("error", (error) => {
       logger.error(`Watcher error: ${error instanceof Error ? error.message : String(error)}`);
     });
-    await new Promise<void>((resolve) => {
-      this.watcher!.once("ready", resolve);
+    await new Promise<void>((resolve, reject) => {
+      const onReady = () => {
+        this.watcher!.off("error", onStartupError);
+        resolve();
+      };
+      const onStartupError = (error: unknown) => {
+        this.watcher!.off("ready", onReady);
+        reject(error);
+      };
+      this.watcher!.once("ready", onReady);
+      this.watcher!.once("error", onStartupError);
     });
 
     logger.watch(this.directory);
