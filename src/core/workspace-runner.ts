@@ -61,16 +61,25 @@ export class WorkspaceRunner {
   }
 
   async shutdown(): Promise<void> {
-    await this.stop();
-    let firstError: unknown;
+    const errors: unknown[] = [];
+    try {
+      await this.watcher.stop();
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await this.policies.stop();
+    } catch (error) {
+      errors.push(error);
+    }
     for (const service of [...this.startOrder].reverse()) {
       try {
         await service.manager.shutdown();
       } catch (error) {
-        firstError ??= error;
+        errors.push(error);
       }
     }
-    if (firstError) throw firstError;
+    if (errors.length) throw new AggregateError(errors, "One or more workspace services failed to shut down");
   }
 
   async restartNow(serviceName?: string): Promise<void> {
@@ -80,7 +89,15 @@ export class WorkspaceRunner {
       await service.manager.restartNow();
       return;
     }
-    for (const service of this.startOrder) await service.manager.restartNow();
+    const errors: unknown[] = [];
+    for (const service of this.startOrder) {
+      try {
+        await service.manager.restartNow();
+      } catch (error) {
+        errors.push(new Error(`Could not restart service ${service.name}`, { cause: error }));
+      }
+    }
+    if (errors.length) throw new AggregateError(errors, "One or more workspace services failed to restart");
   }
 
   getStatus(): EngineStatus {
