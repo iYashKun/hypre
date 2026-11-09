@@ -3,7 +3,7 @@
   "version": "0.3.4",
   "description": "a universal TypeScript based hot reload engine",
   "engines": {
-    "node": ">=22.22.0"
+    "node": ">=26.13.0"
   },
   "author": "Yash",
   "license": "MIT",
