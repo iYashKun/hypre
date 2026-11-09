@@ -2,7 +2,6 @@
 
 - Add C (`.c`), C++ (`.cc`, `.cpp`, `.cxx`, `.c++`) and C# (`.cs`) runners. C and C++ compile to isolated temporary executables; C# runs through the nearest unambiguous `.csproj`.
 - Add optional workspace `readyUrl` and `readinessTimeoutMs` settings so dependent services can wait for HTTP readiness. Responses below status 500 count as ready.
-- Add `npm test` with regression coverage for preview and proxy security, control server shutdown/authentication, readiness cancellation, TypeScript fallback and C/C++/C# execution.
 
 ### Fixed
 
@@ -13,7 +12,7 @@
 - Make shutdown attempt all cleanup steps, terminate compiler and child process trees, close idle control/proxy sockets and continue restarting remaining workspace services after a restart failure.
 - Harden proxy readiness and forwarding: accept 404 readiness responses, probe IPv4/IPv6 loopback, propagate aborted requests, filter hop-by-hop headers, preserve forwarded IP chains and drain old HTTP requests with a timeout.
 - Validate configuration types, reject unsupported service `shell` settings, serialize overlapping watch commands and send error logs to stderr.
-- Protect the control service with a private per-user state directory, mode-0600 state files, duplicate-session checks, a challenge-response handshake, one request per connection and bounded connection lifetime.
+- Protect the control service with a private per user state directory, mode-0600 state files, duplicate session checks, a challenge response handshake, one request per connection and bounded connection lifetime.
 - Pin the Go launcher to the package version, forward interrupt/termination signals and return a valid failure status when its child is signaled.
 - Route vulnerability reports through private GitHub Security Advisories.
 
@@ -24,4 +23,4 @@
 
 ### Verification
 
-- `npm ci` and `npm test` pass; all 11 tests pass.
+- `npm ci` pass;
